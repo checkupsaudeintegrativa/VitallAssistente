@@ -84,3 +84,52 @@ export async function listUsers() {
   const { data } = await client.get('/security/list_users');
   return data?.list || data;
 }
+
+/** Busca paciente pelo nome — retorna PatientId e dados */
+export async function searchPatient(name: string): Promise<{ PatientId: number; Name: string } | null> {
+  try {
+    const { data } = await client.get('/patient/get', {
+      params: { Name: name },
+    });
+
+    // API pode retornar objeto ou array
+    if (Array.isArray(data) && data.length > 0) {
+      return { PatientId: data[0].PatientId, Name: data[0].Name };
+    }
+    if (data?.PatientId) {
+      return { PatientId: data.PatientId, Name: data.Name };
+    }
+    return null;
+  } catch (error: any) {
+    console.error('[Clinicorp] Erro ao buscar paciente:', error.message);
+    return null;
+  }
+}
+
+/** Upload de arquivo para a ficha do paciente (foto de perfil, documento, etc.) */
+export async function uploadFile(
+  patientId: number,
+  patientName: string,
+  imageUrl: string,
+  localFile: 'Person.Profile' | 'Person.Photo' | 'Person.Document' | 'Person.File' = 'Person.Profile'
+): Promise<{ success: boolean; status?: string; error?: string }> {
+  try {
+    const { data } = await client.post('/file/upload', [
+      {
+        Url: imageUrl,
+        LocalFile: localFile,
+        PatientName: patientName,
+        PatinetId: patientId, // Typo é da API do Clinicorp mesmo
+      },
+    ]);
+
+    const result = Array.isArray(data) ? data[0] : data;
+    if (result?.Status === 'SUCCESS') {
+      return { success: true, status: 'SUCCESS' };
+    }
+    return { success: false, status: result?.Status || 'UNKNOWN', error: result?.Message };
+  } catch (error: any) {
+    console.error('[Clinicorp] Erro no upload:', error?.response?.data || error.message);
+    return { success: false, error: error.message };
+  }
+}

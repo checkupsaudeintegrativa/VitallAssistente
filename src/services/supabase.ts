@@ -188,6 +188,39 @@ export async function cancelReminder(reminderId: string): Promise<boolean> {
   return true;
 }
 
+// ── Image Storage ──
+
+/** Upload de imagem base64 para Supabase Storage — retorna URL pública */
+export async function uploadImageToStorage(
+  base64: string,
+  mimetype: string,
+  folder: string = 'patient-photos'
+): Promise<string | null> {
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    const ext = mimetype.includes('png') ? 'png' : mimetype.includes('webp') ? 'webp' : 'jpg';
+    const fileName = `${folder}/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from('uploads')
+      .upload(fileName, buffer, {
+        contentType: mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('[Supabase Storage] Erro no upload:', error.message);
+      return null;
+    }
+
+    const { data: urlData } = supabase.storage.from('uploads').getPublicUrl(fileName);
+    return urlData?.publicUrl || null;
+  } catch (error: any) {
+    console.error('[Supabase Storage] Erro:', error.message);
+    return null;
+  }
+}
+
 // ── Patient Photo Reminders ──
 
 /** Cria lembrete de foto de paciente (next_reminder = 3h depois) */

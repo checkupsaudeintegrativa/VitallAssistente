@@ -184,14 +184,15 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     type: 'function',
     function: {
-      name: 'confirm_photo_added',
-      description: 'Confirma que a foto do paciente foi adicionada na ficha do Clinicorp. Use quando Jéssica confirmar que já adicionou a foto (ex: "sim", "feito", "já coloquei", "✅").',
+      name: 'upload_patient_photo',
+      description: 'Faz upload da foto do paciente direto para a ficha no Clinicorp. Use quando a imagem enviada for foto de uma pessoa E o nome do paciente for informado. Busca o paciente no Clinicorp e envia a foto automaticamente. Precisa da image_url do [Contexto].',
       parameters: {
         type: 'object',
         properties: {
-          reminder_id: { type: 'string', description: 'UUID do lembrete de foto a confirmar' },
+          patient_name: { type: 'string', description: 'Nome do paciente para buscar no Clinicorp' },
+          image_url: { type: 'string', description: 'URL pública da imagem (do [Contexto] / [Imagem])' },
         },
-        required: ['reminder_id'],
+        required: ['patient_name', 'image_url'],
       },
     },
   },
@@ -199,12 +200,12 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'create_photo_reminder',
-      description: 'Cria um lembrete de foto de paciente. Use quando a Jéssica enviar uma imagem e você identificar que é foto de uma pessoa/paciente. O sistema lembrará automaticamente até ela confirmar que adicionou no Clinicorp.',
+      description: 'Cria um lembrete de foto de paciente caso não consiga fazer upload automático. O sistema lembrará automaticamente até confirmar.',
       parameters: {
         type: 'object',
         properties: {
-          description: { type: 'string', description: 'Descrição do que você viu na foto. Ex: "Foto de rosto de paciente, mulher jovem"' },
-          patient_name: { type: 'string', description: 'Nome do paciente, se a Jéssica mencionou ou se está visível na foto. Pode ser null.' },
+          description: { type: 'string', description: 'Descrição do que você viu na foto.' },
+          patient_name: { type: 'string', description: 'Nome do paciente, se mencionado.' },
         },
         required: ['description'],
       },
@@ -214,7 +215,7 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'confirm_photo_added',
-      description: 'Confirma que a foto do paciente foi adicionada na ficha do Clinicorp. Use quando Jéssica confirmar que já adicionou a foto (ex: "sim", "feito", "já coloquei", "✅").',
+      description: 'Confirma que a foto do paciente foi adicionada na ficha do Clinicorp manualmente.',
       parameters: {
         type: 'object',
         properties: {
@@ -360,6 +361,9 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
       case 'query_procedures':
         return executeQueryProcedures(args.date_from, args.date_to, args.category);
+
+      case 'upload_patient_photo':
+        return executeUploadPatientPhoto(args.patient_name, args.image_url);
 
       case 'create_photo_reminder':
         return executeCreatePhotoReminder(args.description, args.patient_name);
@@ -671,6 +675,36 @@ async function executeQueryProcedures(dateFrom: string, dateTo: string, category
     categoria: category || 'todos',
     total: summary.length,
     agendamentos: summary.slice(0, 50),
+  });
+}
+
+async function executeUploadPatientPhoto(patientName: string, imageUrl: string): Promise<string> {
+  // 1. Buscar paciente no Clinicorp
+  const patient = await clinicorp.searchPatient(patientName);
+  if (!patient) {
+    return JSON.stringify({
+      sucesso: false,
+      mensagem: `Paciente "${patientName}" não encontrado no Clinicorp. Tente com o nome completo.`,
+    });
+  }
+
+  // 2. Upload da foto para a ficha
+  const result = await clinicorp.uploadFile(patient.PatientId, patient.Name, imageUrl, 'Person.Profile');
+
+  if (result.success) {
+    return JSON.stringify({
+      sucesso: true,
+      paciente: patient.Name,
+      patient_id: patient.PatientId,
+      mensagem: `Foto adicionada com sucesso na ficha de ${patient.Name} no Clinicorp!`,
+    });
+  }
+
+  return JSON.stringify({
+    sucesso: false,
+    paciente: patient.Name,
+    erro: result.error || result.status,
+    mensagem: `Não consegui fazer upload da foto para ${patient.Name}. Erro: ${result.error || result.status}`,
   });
 }
 

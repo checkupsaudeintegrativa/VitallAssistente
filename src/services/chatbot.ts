@@ -89,6 +89,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     let userContent = text;
     let imageBase64: string | undefined;
     let imageMime: string | undefined;
+    let imageStorageUrl: string | undefined;
 
     // ── Processar mídia ──
     if (mediaType === 'image') {
@@ -96,7 +97,14 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       if (media) {
         imageBase64 = media.base64;
         imageMime = media.mimetype;
-        userContent = text || 'Jéssica enviou uma imagem.';
+        userContent = text || 'Imagem enviada.';
+
+        // Upload para Supabase Storage para ter URL pública (usada pelo Clinicorp)
+        const url = await db.uploadImageToStorage(media.base64, media.mimetype);
+        if (url) {
+          imageStorageUrl = url;
+          console.log(`[Chatbot] Imagem salva no Storage: ${url.substring(0, 80)}...`);
+        }
       } else {
         userContent = '[Imagem não pôde ser processada]';
       }
@@ -139,9 +147,15 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     // Montar mensagens com contexto temporal (separadores de dia + horários)
     const contextMessages = buildContextMessages(history);
 
+    // Montar contexto dinâmico
+    let dynamicContext = `[Contexto] Telefone de quem está conversando agora: ${senderPhone}. Use este número no parâmetro "phone" ao criar lembretes.`;
+    if (imageStorageUrl) {
+      dynamicContext += `\n[Imagem] URL pública da imagem enviada: ${imageStorageUrl} — use esta URL no parâmetro "image_url" de upload_patient_photo se for foto de paciente.`;
+    }
+
     const messages: ChatMessage[] = [
       { role: 'system', content: JESSICA_SYSTEM_PROMPT },
-      { role: 'system', content: `[Contexto] Telefone de quem está conversando agora: ${senderPhone}. Use este número no parâmetro "phone" ao criar lembretes.` },
+      { role: 'system', content: dynamicContext },
       ...contextMessages,
     ];
 
