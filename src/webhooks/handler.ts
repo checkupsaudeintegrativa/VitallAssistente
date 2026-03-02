@@ -71,8 +71,20 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
       return;
     }
 
+    // Para LID: mapeia pelo pushName ou usa JESSICA_PHONE como fallback
+    // LID é opaco e não é telefone real — precisamos de um phone válido para histórico e lembretes
+    let resolvedPhone = formattedPhone;
     if (isLid) {
-      console.log(`[Webhook] Mensagem via LID: ${senderPhone} (WhatsApp pessoal)`);
+      const pushName = (data.pushName || '').toLowerCase();
+      if (pushName.includes('arthur')) {
+        resolvedPhone = '5511943635555';
+      } else if (pushName.includes('jéssica') || pushName.includes('jessica')) {
+        resolvedPhone = '5511934550921';
+      } else {
+        // Fallback: usa o primeiro número autorizado (Jéssica)
+        resolvedPhone = process.env.JESSICA_PHONE || '5511934550921';
+      }
+      console.log(`[Webhook] Mensagem via LID: ${senderPhone} → mapeado para ${resolvedPhone} (pushName: "${data.pushName || 'N/A'}")`);
     }
 
     // Detecta tipo de mídia
@@ -91,19 +103,19 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
       return;
     }
 
-    console.log(`[Webhook] Mensagem de ${formattedPhone} (${mediaType}): "${messageText.substring(0, 80)}"`);
+    console.log(`[Webhook] Mensagem de ${resolvedPhone} (${mediaType}): "${messageText.substring(0, 80)}"`);
 
     // Processar via chatbot (async, responde 200 imediatamente)
     handleChatbotMessage({
       remoteJid,
       messageId: data.key?.id || '',
-      senderPhone: formattedPhone,
+      senderPhone: resolvedPhone,
       text: messageText,
       mediaType,
       message: data.message,
     }).catch((err) => console.error('[Webhook] Chatbot error:', err.message));
 
-    res.status(200).json({ status: 'chatbot', phone: formattedPhone });
+    res.status(200).json({ status: 'chatbot', phone: resolvedPhone });
   } catch (error: any) {
     console.error('[Webhook] Erro:', error.message);
     res.status(500).json({ error: 'Internal server error' });
