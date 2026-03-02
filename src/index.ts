@@ -8,7 +8,7 @@ import { sendText } from './services/evolution';
 const app = express();
 
 // Parse JSON bodies
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Health check endpoint
 app.get('/health', (_req, res) => {
