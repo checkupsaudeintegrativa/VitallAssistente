@@ -194,6 +194,32 @@ export async function confirmPhotoAdded(reminderId: string): Promise<boolean> {
 
 // ── Consent Terms ──
 
+/** Cria termo de consentimento pendente */
+export async function createConsentTerm(
+  patientName: string,
+  procedureType: string,
+  appointmentDate: string
+): Promise<{ id: string } | null> {
+  const nextReminder = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('consent_terms')
+    .insert({
+      patient_name: patientName,
+      procedure_type: procedureType,
+      appointment_date: appointmentDate,
+      next_reminder_at: nextReminder,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[Supabase] Erro ao criar consent term:', error.message);
+    return null;
+  }
+  return data;
+}
+
 /** Marca termo como recebido */
 export async function markTermReceived(termId: string): Promise<boolean> {
   const { error } = await supabase

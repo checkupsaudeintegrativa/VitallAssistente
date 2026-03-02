@@ -182,8 +182,53 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     type: 'function',
     function: {
+      name: 'create_photo_reminder',
+      description: 'Cria um lembrete de foto de paciente. Use quando a Jéssica enviar uma imagem e você identificar que é foto de uma pessoa/paciente. O sistema lembrará automaticamente até ela confirmar que adicionou no Clinicorp.',
+      parameters: {
+        type: 'object',
+        properties: {
+          description: { type: 'string', description: 'Descrição do que você viu na foto. Ex: "Foto de rosto de paciente, mulher jovem"' },
+          patient_name: { type: 'string', description: 'Nome do paciente, se a Jéssica mencionou ou se está visível na foto. Pode ser null.' },
+        },
+        required: ['description'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'confirm_photo_added',
+      description: 'Confirma que a foto do paciente foi adicionada na ficha do Clinicorp. Use quando Jéssica confirmar que já adicionou a foto (ex: "sim", "feito", "já coloquei", "✅").',
+      parameters: {
+        type: 'object',
+        properties: {
+          reminder_id: { type: 'string', description: 'UUID do lembrete de foto a confirmar' },
+        },
+        required: ['reminder_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_consent_term',
+      description: 'Cria um registro de termo de consentimento pendente. Use quando identificar que um procedimento precisa de termo, ou quando a Jéssica mencionar um termo que precisa ser coletado.',
+      parameters: {
+        type: 'object',
+        properties: {
+          patient_name: { type: 'string', description: 'Nome do paciente' },
+          procedure_type: { type: 'string', description: 'Tipo do procedimento (ex: "cirurgia", "implante", "botox")' },
+          appointment_date: { type: 'string', description: 'Data do agendamento YYYY-MM-DD' },
+        },
+        required: ['patient_name', 'procedure_type', 'appointment_date'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'confirm_term_received',
-      description: 'Confirma que o termo de consentimento foi recebido. Use quando Jéssica enviar um PDF/documento de termo escaneado, ou confirmar que o termo foi coletado.',
+      description: 'Confirma que o termo de consentimento foi recebido. Use quando Jéssica enviar um PDF de termo escaneado, ou confirmar que o termo foi coletado.',
       parameters: {
         type: 'object',
         properties: {
@@ -297,8 +342,14 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
       case 'query_procedures':
         return executeQueryProcedures(args.date_from, args.date_to, args.category);
 
+      case 'create_photo_reminder':
+        return executeCreatePhotoReminder(args.description, args.patient_name);
+
       case 'confirm_photo_added':
         return executeConfirmPhotoAdded(args.reminder_id);
+
+      case 'create_consent_term':
+        return executeCreateConsentTerm(args.patient_name, args.procedure_type, args.appointment_date);
 
       case 'confirm_term_received':
         return executeConfirmTermReceived(args.term_id, args.patient_name, args.date);
@@ -593,6 +644,22 @@ async function executeQueryProcedures(dateFrom: string, dateTo: string, category
   });
 }
 
+async function executeCreatePhotoReminder(description: string, patientName?: string): Promise<string> {
+  const result = await db.createPhotoReminder(description, patientName || null);
+
+  if (result) {
+    return JSON.stringify({
+      sucesso: true,
+      id: result.id,
+      descricao: description,
+      paciente: patientName || null,
+      mensagem: 'Lembrete de foto criado. O sistema vai lembrar a Jéssica automaticamente até ela confirmar.',
+    });
+  }
+
+  return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o lembrete de foto' });
+}
+
 async function executeConfirmPhotoAdded(reminderId: string): Promise<string> {
   const success = await db.confirmPhotoAdded(reminderId);
   return JSON.stringify({
@@ -600,6 +667,23 @@ async function executeConfirmPhotoAdded(reminderId: string): Promise<string> {
     id: reminderId,
     mensagem: success ? 'Foto confirmada como adicionada no Clinicorp' : 'Não foi possível confirmar (já confirmada ou não encontrada)',
   });
+}
+
+async function executeCreateConsentTerm(patientName: string, procedureType: string, appointmentDate: string): Promise<string> {
+  const result = await db.createConsentTerm(patientName, procedureType, appointmentDate);
+
+  if (result) {
+    return JSON.stringify({
+      sucesso: true,
+      id: result.id,
+      paciente: patientName,
+      procedimento: procedureType,
+      data: appointmentDate,
+      mensagem: 'Termo de consentimento registrado. O sistema vai lembrar até receber o documento.',
+    });
+  }
+
+  return JSON.stringify({ sucesso: false, error: 'Não foi possível registrar o termo' });
 }
 
 async function executeConfirmTermReceived(termId?: string, patientName?: string, date?: string): Promise<string> {
