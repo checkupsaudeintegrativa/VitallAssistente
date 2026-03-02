@@ -19,9 +19,10 @@ function delay(ms: number): Promise<void> {
 /** Envia status "digitando..." para o contato */
 export async function sendPresenceComposing(formattedPhone: string): Promise<void> {
   try {
-    await client.post(`/chat/updatePresence/${env.EVOLUTION_INSTANCE}`, {
+    await client.post(`/chat/sendPresence/${env.EVOLUTION_INSTANCE}`, {
       number: formattedPhone,
       presence: 'composing',
+      delay: 1200,
     });
   } catch (error: any) {
     console.warn('[Evolution] Erro ao enviar presença:', error?.response?.data || error.message);
