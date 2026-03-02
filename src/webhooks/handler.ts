@@ -7,9 +7,18 @@ const router = Router();
 /** Números autorizados a usar a IA */
 const ALLOWED_PHONES = [
   '5511934550921',  // Jéssica (principal)
-  '5511943635555',  // Arthur (teste)
+  '5511943635555',  // Arthur
   '5511917293419',  // Jéssica (segundo número)
+  '5511944655555',  // Dra. Ana
 ];
+
+/** Mapa de telefone → nome da pessoa (para a IA chamar pelo nome certo) */
+const PHONE_NAMES: Record<string, string> = {
+  '5511934550921': 'Jéssica',
+  '5511943635555': 'Arthur',
+  '5511917293419': 'Jéssica',
+  '5511944655555': 'Dra. Ana',
+};
 
 /**
  * Webhook da Evolution API — WhatsApp Assistente (IA da Jéssica)
@@ -78,10 +87,11 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
       const pushName = (data.pushName || '').toLowerCase();
       if (pushName.includes('arthur')) {
         resolvedPhone = '5511943635555';
+      } else if (pushName.includes('ana')) {
+        resolvedPhone = '5511944655555';
       } else if (pushName.includes('jéssica') || pushName.includes('jessica')) {
         resolvedPhone = '5511934550921';
       } else {
-        // Fallback: usa o primeiro número autorizado (Jéssica)
         resolvedPhone = process.env.JESSICA_PHONE || '5511934550921';
       }
       console.log(`[Webhook] Mensagem via LID: ${senderPhone} → mapeado para ${resolvedPhone} (pushName: "${data.pushName || 'N/A'}")`);
@@ -105,11 +115,15 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
 
     console.log(`[Webhook] Mensagem de ${resolvedPhone} (${mediaType}): "${messageText.substring(0, 80)}"`);
 
+    // Resolver nome da pessoa pelo telefone
+    const senderName = PHONE_NAMES[resolvedPhone] || data.pushName || 'Usuário';
+
     // Processar via chatbot (async, responde 200 imediatamente)
     handleChatbotMessage({
       remoteJid,
       messageId: data.key?.id || '',
       senderPhone: resolvedPhone,
+      senderName,
       text: messageText,
       mediaType,
       message: data.message,

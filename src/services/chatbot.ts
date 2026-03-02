@@ -10,6 +10,7 @@ export interface IncomingMessage {
   remoteJid: string;
   messageId: string;
   senderPhone: string;
+  senderName: string;
   text: string;
   mediaType: MediaType;
   message: any; // raw Evolution API message payload
@@ -81,7 +82,7 @@ function buildContextMessages(
  * Processa mensagem recebida, detecta tipo, e responde via GPT-4o.
  */
 export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> {
-  const { senderPhone, remoteJid, messageId, text, mediaType, message } = msg;
+  const { senderPhone, senderName, remoteJid, messageId, text, mediaType, message } = msg;
 
   console.log(`[Chatbot] Mensagem de ${senderPhone} (tipo: ${mediaType}): "${text.substring(0, 100)}"`);
 
@@ -127,7 +128,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         if (media.mimetype.includes('pdf') || media.mimetype.includes('image')) {
           imageBase64 = media.base64;
           imageMime = media.mimetype.includes('pdf') ? 'image/png' : media.mimetype;
-          userContent = text || 'Jéssica enviou um documento/PDF.';
+          userContent = text || `${senderName} enviou um documento/PDF.`;
         } else {
           userContent = text || '[Documento enviado]';
         }
@@ -148,7 +149,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     const contextMessages = buildContextMessages(history);
 
     // Montar contexto dinâmico
-    let dynamicContext = `[Contexto] Telefone de quem está conversando agora: ${senderPhone}. Use este número no parâmetro "phone" ao criar lembretes.`;
+    let dynamicContext = `[Contexto] Quem está conversando: *${senderName}* (telefone: ${senderPhone}). Chame sempre pelo nome "${senderName}". Use o telefone no parâmetro "phone" ao criar lembretes.`;
     if (imageStorageUrl) {
       dynamicContext += `\n[Imagem] URL pública da imagem enviada: ${imageStorageUrl} — use esta URL no parâmetro "image_url" de upload_patient_photo se for foto de paciente.`;
     }
