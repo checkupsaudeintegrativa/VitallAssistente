@@ -4,11 +4,17 @@ import { handleChatbotMessage, IncomingMessage } from '../services/chatbot';
 
 const router = Router();
 
+/** Números autorizados a usar a IA */
+const ALLOWED_PHONES = [
+  '5511943550921',  // Jéssica (principal)
+  '5511943635555',  // Arthur (teste)
+  '5511917293419',  // Jéssica (segundo número)
+];
+
 /**
  * Webhook da Evolution API — WhatsApp Assistente (IA da Jéssica)
  *
- * Este é um número dedicado para a IA. Todas as mensagens recebidas
- * são processadas pelo chatbot (não há fluxos de automação aqui).
+ * Responde APENAS para os números autorizados.
  */
 router.post('/webhook/evolution', async (req: Request, res: Response) => {
   try {
@@ -42,7 +48,6 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
     }
 
     // Ignora mensagens enviadas por nós (fromMe = true)
-    // Essas são as respostas da IA ou mensagens digitadas diretamente no WhatsApp conectado
     if (data.key?.fromMe) {
       res.status(200).json({ status: 'ignored', reason: 'fromMe' });
       return;
@@ -51,6 +56,13 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
     // Ignora mensagens de grupo
     if (remoteJid.includes('@g.us')) {
       res.status(200).json({ status: 'ignored', reason: 'group message' });
+      return;
+    }
+
+    // Só responde para números autorizados
+    if (!ALLOWED_PHONES.includes(formattedPhone)) {
+      console.log(`[Webhook] Número não autorizado: ${formattedPhone}, ignorando`);
+      res.status(200).json({ status: 'ignored', reason: 'unauthorized phone' });
       return;
     }
 
