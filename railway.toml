@@ -1,0 +1,10 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node dist/index.js"
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
+
+[service]
+internalPort = 3000
