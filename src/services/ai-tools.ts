@@ -149,6 +149,52 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'query_procedures',
+      description: 'Consulta agendamentos filtrados por tipo de procedimento. Categorias: "revisao" (revisão, retorno, controle, manutenção), "cirurgia" (cirurgia, extração, implante, enxerto, exodontia), "estetico" (botox, harmonização, clareamento, lente, faceta), "ortodontia" (aparelho, ortodontia, alinhador). Use para "revisões dessa semana", "cirurgias do mês", "quantos pacientes de botox".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD' },
+          category: { type: 'string', description: 'Categoria de procedimento: "revisao", "cirurgia", "estetico", "ortodontia". Se omitido, retorna todos.' },
+        },
+        required: ['date_from', 'date_to'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'confirm_photo_added',
+      description: 'Confirma que a foto do paciente foi adicionada na ficha do Clinicorp. Use quando Jéssica confirmar que já adicionou a foto (ex: "sim", "feito", "já coloquei", "✅").',
+      parameters: {
+        type: 'object',
+        properties: {
+          reminder_id: { type: 'string', description: 'UUID do lembrete de foto a confirmar' },
+        },
+        required: ['reminder_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'confirm_term_received',
+      description: 'Confirma que o termo de consentimento foi recebido. Use quando Jéssica enviar um PDF/documento de termo escaneado, ou confirmar que o termo foi coletado.',
+      parameters: {
+        type: 'object',
+        properties: {
+          term_id: { type: 'string', description: 'UUID do termo de consentimento (se disponível)' },
+          patient_name: { type: 'string', description: 'Nome do paciente (usado para buscar o termo se term_id não for informado)' },
+          date: { type: 'string', description: 'Data do agendamento YYYY-MM-DD (usado junto com patient_name para buscar o termo)' },
+        },
+        required: [],
+      },
+    },
+  },
 ];
 
 // ── Tool Executors ──
@@ -247,6 +293,15 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
 
       case 'delete_reminder':
         return executeDeleteReminder(args.reminder_id);
+
+      case 'query_procedures':
+        return executeQueryProcedures(args.date_from, args.date_to, args.category);
+
+      case 'confirm_photo_added':
+        return executeConfirmPhotoAdded(args.reminder_id);
+
+      case 'confirm_term_received':
+        return executeConfirmTermReceived(args.term_id, args.patient_name, args.date);
 
       default:
         return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
@@ -483,5 +538,101 @@ async function executeDeleteReminder(reminderId: string): Promise<string> {
     sucesso: success,
     id: reminderId,
     mensagem: success ? 'Lembrete cancelado com sucesso' : 'Não foi possível cancelar (já enviado ou não encontrado)',
+  });
+}
+
+// ── Procedure category keywords ──
+
+const PROCEDURE_CATEGORIES: Record<string, string[]> = {
+  revisao: ['revisão', 'revisao', 'retorno', 'controle', 'manutenção', 'manutencao', 'profilaxia', 'limpeza'],
+  cirurgia: ['cirurgia', 'extração', 'extracao', 'implante', 'enxerto', 'exodontia', 'siso'],
+  estetico: ['botox', 'harmonização', 'harmonizacao', 'clareamento', 'lente', 'faceta', 'preenchimento'],
+  ortodontia: ['aparelho', 'ortodontia', 'alinhador', 'manutenção ortodôntica', 'manutencao ortodontica'],
+};
+
+function matchesProcedureCategory(procedureText: string, category: string): boolean {
+  const keywords = PROCEDURE_CATEGORIES[category];
+  if (!keywords) return false;
+  const lower = procedureText.toLowerCase();
+  return keywords.some((kw) => lower.includes(kw));
+}
+
+async function executeQueryProcedures(dateFrom: string, dateTo: string, category?: string): Promise<string> {
+  const raw = await clinicorp.listAppointments(dateFrom, dateTo);
+  let appointments = Array.isArray(raw) ? raw : [];
+
+  // Filtrar cancelados
+  appointments = appointments.filter((a: any) => a.Deleted !== 'X');
+
+  // Filtrar por categoria de procedimento
+  if (category) {
+    appointments = appointments.filter((a: any) => {
+      const proc = (a.Procedures || '') + ' ' + (a.Notes || '');
+      return matchesProcedureCategory(proc, category);
+    });
+  }
+
+  const summary = [];
+  for (const a of appointments) {
+    const dentistId = a.Dentist_PersonId || a.CreatedUserId;
+    const dentistFullName = dentistId ? await getDentistName(dentistId) : 'Sem dentista';
+
+    summary.push({
+      paciente: a.PatientName || 'N/A',
+      horario: formatTime(a.fromTime || ''),
+      data: a.date ? a.date.substring(0, 10) : 'N/A',
+      dentista: dentistFullName,
+      procedimento: a.Procedures || a.Notes || '',
+    });
+  }
+
+  return JSON.stringify({
+    categoria: category || 'todos',
+    total: summary.length,
+    agendamentos: summary.slice(0, 50),
+  });
+}
+
+async function executeConfirmPhotoAdded(reminderId: string): Promise<string> {
+  const success = await db.confirmPhotoAdded(reminderId);
+  return JSON.stringify({
+    sucesso: success,
+    id: reminderId,
+    mensagem: success ? 'Foto confirmada como adicionada no Clinicorp' : 'Não foi possível confirmar (já confirmada ou não encontrada)',
+  });
+}
+
+async function executeConfirmTermReceived(termId?: string, patientName?: string, date?: string): Promise<string> {
+  // Se tem term_id, usa direto
+  if (termId) {
+    const success = await db.markTermReceived(termId);
+    return JSON.stringify({
+      sucesso: success,
+      id: termId,
+      mensagem: success ? 'Termo marcado como recebido' : 'Não foi possível marcar (já recebido ou não encontrado)',
+    });
+  }
+
+  // Senão, busca por paciente + data
+  if (patientName && date) {
+    const term = await db.findConsentByPatientAndDate(patientName, date);
+    if (term) {
+      const success = await db.markTermReceived(term.id);
+      return JSON.stringify({
+        sucesso: success,
+        id: term.id,
+        paciente: patientName,
+        mensagem: success ? 'Termo marcado como recebido' : 'Termo já foi recebido anteriormente',
+      });
+    }
+    return JSON.stringify({
+      sucesso: false,
+      mensagem: `Nenhum termo pendente encontrado para ${patientName} na data ${date}`,
+    });
+  }
+
+  return JSON.stringify({
+    sucesso: false,
+    mensagem: 'Informe term_id ou patient_name + date para identificar o termo',
   });
 }

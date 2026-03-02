@@ -151,4 +151,82 @@ export async function cancelReminder(reminderId: string): Promise<boolean> {
   return true;
 }
 
+// ── Patient Photo Reminders ──
+
+/** Cria lembrete de foto de paciente (next_reminder = 3h depois) */
+export async function createPhotoReminder(
+  description: string,
+  patientName: string | null
+): Promise<{ id: string } | null> {
+  const nextReminder = new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString();
+
+  const { data, error } = await supabase
+    .from('patient_photo_reminders')
+    .insert({
+      description,
+      patient_name: patientName,
+      next_reminder_at: nextReminder,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[Supabase] Erro ao criar photo reminder:', error.message);
+    return null;
+  }
+  return data;
+}
+
+/** Marca foto como confirmada */
+export async function confirmPhotoAdded(reminderId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('patient_photo_reminders')
+    .update({ status: 'confirmed', confirmed_at: new Date().toISOString() })
+    .eq('id', reminderId)
+    .eq('status', 'pending');
+
+  if (error) {
+    console.error('[Supabase] Erro ao confirmar photo:', error.message);
+    return false;
+  }
+  return true;
+}
+
+// ── Consent Terms ──
+
+/** Marca termo como recebido */
+export async function markTermReceived(termId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('consent_terms')
+    .update({ status: 'received', received_at: new Date().toISOString() })
+    .eq('id', termId)
+    .eq('status', 'pending');
+
+  if (error) {
+    console.error('[Supabase] Erro ao marcar termo recebido:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/** Busca termo de consentimento por paciente e data */
+export async function findConsentByPatientAndDate(
+  patientName: string,
+  date: string
+): Promise<{ id: string; status: string } | null> {
+  const search = patientName.toLowerCase();
+  const { data, error } = await supabase
+    .from('consent_terms')
+    .select('id, status')
+    .ilike('patient_name', `%${search}%`)
+    .eq('appointment_date', date)
+    .limit(1);
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar consent by patient/date:', error.message);
+    return null;
+  }
+  return data && data.length > 0 ? data[0] : null;
+}
+
 export { supabase };
