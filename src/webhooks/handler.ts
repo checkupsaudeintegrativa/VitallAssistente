@@ -6,7 +6,7 @@ const router = Router();
 
 /** Números autorizados a usar a IA */
 const ALLOWED_PHONES = [
-  '5511943550921',  // Jéssica (principal)
+  '5511934550921',  // Jéssica (principal)
   '5511943635555',  // Arthur (teste)
   '5511917293419',  // Jéssica (segundo número)
 ];
