@@ -70,11 +70,21 @@ export async function getDentistInfo(personId: number): Promise<{ phone: string;
 
 // ── Jessica Reminders ──
 
-/** Cria um lembrete para a Jéssica */
-export async function createReminder(title: string, remindAt: string): Promise<{ id: string } | null> {
+/** Cria um lembrete (envia para o phone que pediu, suporta recorrência) */
+export async function createReminder(
+  title: string,
+  remindAt: string,
+  phone?: string,
+  recurring?: boolean
+): Promise<{ id: string } | null> {
   const { data, error } = await supabase
     .from('jessica_reminders')
-    .insert({ title, remind_at: remindAt })
+    .insert({
+      title,
+      remind_at: remindAt,
+      phone: phone || null,
+      recurring: recurring || false,
+    })
     .select('id')
     .single();
 
@@ -106,12 +116,12 @@ export async function listPendingReminders(): Promise<
 
 /** Busca lembretes vencidos (remind_at <= now) que ainda estão pendentes */
 export async function getDueReminders(): Promise<
-  { id: string; title: string; remind_at: string }[]
+  { id: string; title: string; remind_at: string; phone: string | null; recurring: boolean; reminder_count: number }[]
 > {
   const now = new Date().toISOString();
   const { data, error } = await supabase
     .from('jessica_reminders')
-    .select('id, title, remind_at')
+    .select('id, title, remind_at, phone, recurring, reminder_count')
     .eq('status', 'pending')
     .lte('remind_at', now);
 
@@ -123,7 +133,7 @@ export async function getDueReminders(): Promise<
   return data || [];
 }
 
-/** Marca lembrete como enviado */
+/** Marca lembrete como enviado (não-recorrente) */
 export async function markReminderSent(reminderId: string): Promise<void> {
   const { error } = await supabase
     .from('jessica_reminders')
@@ -133,6 +143,33 @@ export async function markReminderSent(reminderId: string): Promise<void> {
   if (error) {
     console.error('[Supabase] Erro ao marcar lembrete como enviado:', error.message);
   }
+}
+
+/** Para recorrente: incrementa contador e agenda próximo (mantém pending) */
+export async function rescheduleReminder(reminderId: string, nextAt: string, count: number): Promise<void> {
+  const { error } = await supabase
+    .from('jessica_reminders')
+    .update({ remind_at: nextAt, reminder_count: count, sent_at: new Date().toISOString() })
+    .eq('id', reminderId);
+
+  if (error) {
+    console.error('[Supabase] Erro ao reagendar lembrete:', error.message);
+  }
+}
+
+/** Confirma lembrete recorrente como feito (para de lembrar) */
+export async function confirmReminderDone(reminderId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('jessica_reminders')
+    .update({ status: 'confirmed', confirmed_at: new Date().toISOString() })
+    .eq('id', reminderId)
+    .in('status', ['pending', 'sent']);
+
+  if (error) {
+    console.error('[Supabase] Erro ao confirmar lembrete:', error.message);
+    return false;
+  }
+  return true;
 }
 
 /** Cancela um lembrete */

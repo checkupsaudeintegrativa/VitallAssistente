@@ -141,6 +141,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
     const messages: ChatMessage[] = [
       { role: 'system', content: JESSICA_SYSTEM_PROMPT },
+      { role: 'system', content: `[Contexto] Telefone de quem está conversando agora: ${senderPhone}. Use este número no parâmetro "phone" ao criar lembretes.` },
       ...contextMessages,
     ];
 

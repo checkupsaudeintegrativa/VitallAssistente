@@ -116,14 +116,16 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'create_reminder',
-      description: 'Cria um lembrete para a Jéssica. Ela será notificada via WhatsApp no horário especificado. Use para "me lembra de X às 14h", "lembrete para ligar amanhã".',
+      description: 'Cria um lembrete. O lembrete será enviado via WhatsApp no horário especificado para o telefone de quem pediu. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT — se passar, use 17h30 BRT do mesmo dia ou 7h30 BRT do dia seguinte). Se a pessoa não especificar que é único, crie como recorrente (recurring=true) — o sistema vai lembrar todo dia às 7h30 BRT até ela confirmar que fez.',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string', description: 'Descrição do lembrete. Ex: "Ligar para paciente Maria"' },
-          datetime: { type: 'string', description: 'Data/hora do lembrete no formato ISO 8601 com fuso BRT. Ex: "2025-01-15T14:00:00-03:00"' },
+          datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
+          phone: { type: 'string', description: 'Telefone de quem pediu (do contexto [Contexto]). Ex: "5511943635555"' },
+          recurring: { type: 'boolean', description: 'true = lembra todo dia até confirmar. false = lembra uma vez só. Default: true para tarefas ("me lembra de..."), false para horários fixos ("me avisa às 14h").' },
         },
-        required: ['title', 'datetime'],
+        required: ['title', 'datetime', 'phone'],
       },
     },
   },
@@ -131,7 +133,7 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'list_reminders',
-      description: 'Lista todos os lembretes pendentes da Jéssica. Use para "quais meus lembretes?", "tenho lembrete pra hoje?".',
+      description: 'Lista todos os lembretes pendentes. Use para "quais meus lembretes?", "tenho lembrete pra hoje?".',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },
@@ -139,11 +141,25 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'delete_reminder',
-      description: 'Cancela/remove um lembrete pelo ID. Use quando Jéssica pedir para cancelar ou remover um lembrete.',
+      description: 'Cancela/remove um lembrete pelo ID. Use quando pedir para cancelar ou remover um lembrete.',
       parameters: {
         type: 'object',
         properties: {
           reminder_id: { type: 'string', description: 'UUID do lembrete a cancelar' },
+        },
+        required: ['reminder_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'confirm_reminder_done',
+      description: 'Confirma que a tarefa do lembrete foi feita — para de lembrar. Use quando a pessoa disser "feito", "já fiz", "pode parar de lembrar", "✅" referindo-se a um lembrete recorrente.',
+      parameters: {
+        type: 'object',
+        properties: {
+          reminder_id: { type: 'string', description: 'UUID do lembrete a confirmar como feito' },
         },
         required: ['reminder_id'],
       },
@@ -331,13 +347,16 @@ export async function executeTool(name: string, args: Record<string, any>): Prom
         return executeGetFinancialSummary(args.date_from, args.date_to);
 
       case 'create_reminder':
-        return executeCreateReminder(args.title, args.datetime);
+        return executeCreateReminder(args.title, args.datetime, args.phone, args.recurring);
 
       case 'list_reminders':
         return executeListReminders();
 
       case 'delete_reminder':
         return executeDeleteReminder(args.reminder_id);
+
+      case 'confirm_reminder_done':
+        return executeConfirmReminderDone(args.reminder_id);
 
       case 'query_procedures':
         return executeQueryProcedures(args.date_from, args.date_to, args.category);
@@ -551,8 +570,8 @@ async function executeGetFinancialSummary(dateFrom: string, dateTo: string): Pro
   return JSON.stringify(raw || { error: 'Sem dados financeiros para o período' });
 }
 
-async function executeCreateReminder(title: string, datetime: string): Promise<string> {
-  const result = await db.createReminder(title, datetime);
+async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean): Promise<string> {
+  const result = await db.createReminder(title, datetime, phone, recurring);
 
   if (result) {
     const remindDate = new Date(datetime);
@@ -561,10 +580,21 @@ async function executeCreateReminder(title: string, datetime: string): Promise<s
       id: result.id,
       titulo: title,
       horario: remindDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+      telefone: phone || 'padrão',
+      recorrente: recurring || false,
     });
   }
 
   return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o lembrete' });
+}
+
+async function executeConfirmReminderDone(reminderId: string): Promise<string> {
+  const success = await db.confirmReminderDone(reminderId);
+  return JSON.stringify({
+    sucesso: success,
+    id: reminderId,
+    mensagem: success ? 'Lembrete confirmado como feito! Não vou mais lembrar.' : 'Não encontrei esse lembrete pendente.',
+  });
 }
 
 async function executeListReminders(): Promise<string> {
