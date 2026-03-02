@@ -152,7 +152,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
     // Mostrar "digitando..." antes de responder
     try {
-      await evolution.sendPresenceComposing(senderPhone);
+      await evolution.sendPresenceComposing(remoteJid);
     } catch {
       // presença é best-effort
     }
@@ -174,8 +174,8 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         await evolution.sendTextReply(senderPhone, prefixed, messageId, remoteJid);
       } else {
         // Mostrar "digitando..." antes de cada mensagem adicional
-        try { await evolution.sendPresenceComposing(senderPhone); } catch {}
-        await evolution.sendText(senderPhone, prefixed);
+        try { await evolution.sendPresenceComposing(remoteJid); } catch {}
+        await evolution.sendText(senderPhone, prefixed, remoteJid);
       }
     }
 
@@ -185,7 +185,8 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
     await evolution.sendText(
       senderPhone,
-      '> *Vitall:*\n\nDesculpe, tive um problema ao processar sua mensagem. Tente novamente em instantes.'
+      '> *Vitall:*\n\nDesculpe, tive um problema ao processar sua mensagem. Tente novamente em instantes.',
+      remoteJid
     );
   }
 }

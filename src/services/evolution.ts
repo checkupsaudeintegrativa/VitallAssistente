@@ -17,10 +17,10 @@ function delay(ms: number): Promise<void> {
 }
 
 /** Envia status "digitando..." para o contato */
-export async function sendPresenceComposing(formattedPhone: string): Promise<void> {
+export async function sendPresenceComposing(phoneOrJid: string): Promise<void> {
   try {
     await client.post(`/chat/sendPresence/${env.EVOLUTION_INSTANCE}`, {
-      number: formattedPhone,
+      number: phoneOrJid,
       presence: 'composing',
       delay: 1200,
     });
@@ -29,17 +29,26 @@ export async function sendPresenceComposing(formattedPhone: string): Promise<voi
   }
 }
 
+/** Resolve o identificador de destino: usa remoteJid para LIDs, senão formata o telefone */
+function resolveNumber(phone: string, remoteJid?: string): string | null {
+  // Se temos um remoteJid @lid, usar ele diretamente (WhatsApp pessoal)
+  if (remoteJid && remoteJid.endsWith('@lid')) {
+    return remoteJid;
+  }
+  return formatPhoneBR(phone);
+}
+
 /** Envia mensagem de texto via Evolution API */
-export async function sendText(phone: string, text: string): Promise<boolean> {
-  const formattedPhone = formatPhoneBR(phone);
-  if (!formattedPhone) {
+export async function sendText(phone: string, text: string, remoteJid?: string): Promise<boolean> {
+  const number = resolveNumber(phone, remoteJid);
+  if (!number) {
     console.error('[Evolution] Telefone inválido:', phone);
     return false;
   }
 
   try {
     await client.post(`/message/sendText/${env.EVOLUTION_INSTANCE}`, {
-      number: formattedPhone,
+      number,
       text,
     });
 
@@ -48,7 +57,7 @@ export async function sendText(phone: string, text: string): Promise<boolean> {
   } catch (error: any) {
     console.error(
       '[Evolution] Erro ao enviar mensagem para',
-      formattedPhone,
+      number,
       ':',
       error?.response?.data || error.message
     );
@@ -63,15 +72,15 @@ export async function sendTextReply(
   quotedMessageId: string,
   remoteJid: string
 ): Promise<boolean> {
-  const formattedPhone = formatPhoneBR(phone);
-  if (!formattedPhone) {
+  const number = resolveNumber(phone, remoteJid);
+  if (!number) {
     console.error('[Evolution] Telefone inválido:', phone);
     return false;
   }
 
   try {
     await client.post(`/message/sendText/${env.EVOLUTION_INSTANCE}`, {
-      number: formattedPhone,
+      number,
       text,
       quoted: {
         key: {
@@ -87,12 +96,12 @@ export async function sendTextReply(
   } catch (error: any) {
     console.error(
       '[Evolution] Erro ao enviar reply para',
-      formattedPhone,
+      number,
       ':',
       error?.response?.data || error.message
     );
     // Fallback: envia como mensagem normal se o reply falhar
-    return sendText(phone, text);
+    return sendText(phone, text, remoteJid);
   }
 }
 
