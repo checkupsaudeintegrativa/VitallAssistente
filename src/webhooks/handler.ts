@@ -37,8 +37,11 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
       data.message?.documentWithCaptionMessage?.message?.documentMessage?.caption ||
       '';
 
-    // Extrai número do remetente (remove @s.whatsapp.net)
-    const senderPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '');
+    // Detecta se é um LID (Linked ID) — WhatsApp pessoal usa IDs opacos
+    const isLid = remoteJid.endsWith('@lid');
+
+    // Extrai número do remetente (remove @s.whatsapp.net, @c.us ou @lid)
+    const senderPhone = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@lid', '');
     const formattedPhone = formatPhoneBR(senderPhone) || senderPhone;
 
     // Ignora mensagens enviadas pela própria IA (prefixo *Vitall:*)
@@ -59,11 +62,17 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
       return;
     }
 
-    // Só responde para números autorizados
-    if (!ALLOWED_PHONES.includes(formattedPhone)) {
+    // Verifica autorização:
+    // - Números @s.whatsapp.net/@c.us: verifica na lista ALLOWED_PHONES
+    // - Números @lid (WhatsApp pessoal): permite (LID é opaco, não dá pra mapear)
+    if (!isLid && !ALLOWED_PHONES.includes(formattedPhone)) {
       console.log(`[Webhook] Número não autorizado: ${formattedPhone}, ignorando`);
       res.status(200).json({ status: 'ignored', reason: 'unauthorized phone' });
       return;
+    }
+
+    if (isLid) {
+      console.log(`[Webhook] Mensagem via LID: ${senderPhone} (WhatsApp pessoal)`);
     }
 
     // Detecta tipo de mídia
