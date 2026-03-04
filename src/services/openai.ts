@@ -6,7 +6,8 @@ if (!globalThis.File) {
 
 import OpenAI, { toFile } from 'openai';
 import { env } from '../config/env';
-import { toolDefinitions, executeTool } from './ai-tools';
+import { executeTool, getToolsForUser } from './ai-tools';
+import { UserConfig } from '../config/users';
 
 let client: OpenAI | null = null;
 
@@ -33,7 +34,8 @@ export interface ChatMessage {
 export async function chatWithTools(
   messages: ChatMessage[],
   imageBase64?: string,
-  mimeType?: string
+  mimeType?: string,
+  user?: UserConfig | null
 ): Promise<string> {
   const openai = getClient();
   if (!openai) {
@@ -58,6 +60,7 @@ export async function chatWithTools(
     }
 
     const MAX_TOOL_ITERATIONS = 5;
+    const tools = getToolsForUser(user);
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const response = await openai.chat.completions.create({
@@ -65,7 +68,7 @@ export async function chatWithTools(
         temperature: 0.4,
         max_tokens: 1000,
         messages: finalMessages,
-        tools: toolDefinitions as any,
+        tools: tools as any,
         tool_choice: 'auto',
       });
 
@@ -94,7 +97,7 @@ export async function chatWithTools(
 
         console.log(`[OpenAI] Tool call: ${fnName}(${JSON.stringify(fnArgs)})`);
 
-        const result = await executeTool(fnName, fnArgs);
+        const result = await executeTool(fnName, fnArgs, user);
 
         console.log(`[OpenAI] Tool result (${fnName}): ${result.substring(0, 200)}`);
 

@@ -1,24 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { formatPhoneBR } from '../utils/phone';
 import { handleChatbotMessage, IncomingMessage } from '../services/chatbot';
+import { ALLOWED_PHONES, PHONE_NAMES, resolveLidPhone } from '../config/users';
 
 const router = Router();
-
-/** Números autorizados a usar a IA */
-const ALLOWED_PHONES = [
-  '5511934550921',  // Jéssica (principal)
-  '5511943635555',  // Arthur
-  '5511917293419',  // Jéssica (segundo número)
-  '5511944655555',  // Dra. Ana
-];
-
-/** Mapa de telefone → nome da pessoa (para a IA chamar pelo nome certo) */
-const PHONE_NAMES: Record<string, string> = {
-  '5511934550921': 'Jéssica',
-  '5511943635555': 'Arthur',
-  '5511917293419': 'Jéssica',
-  '5511944655555': 'Dra. Ana',
-};
 
 /**
  * Webhook da Evolution API — WhatsApp Assistente (IA da Jéssica)
@@ -74,26 +59,17 @@ router.post('/webhook/evolution', async (req: Request, res: Response) => {
     // Verifica autorização:
     // - Números @s.whatsapp.net/@c.us: verifica na lista ALLOWED_PHONES
     // - Números @lid (WhatsApp pessoal): permite (LID é opaco, não dá pra mapear)
-    if (!isLid && !ALLOWED_PHONES.includes(formattedPhone)) {
+    if (!isLid && !ALLOWED_PHONES.has(formattedPhone)) {
       console.log(`[Webhook] Número não autorizado: ${formattedPhone}, ignorando`);
       res.status(200).json({ status: 'ignored', reason: 'unauthorized phone' });
       return;
     }
 
-    // Para LID: mapeia pelo pushName ou usa JESSICA_PHONE como fallback
+    // Para LID: mapeia pelo pushName usando config centralizada
     // LID é opaco e não é telefone real — precisamos de um phone válido para histórico e lembretes
     let resolvedPhone = formattedPhone;
     if (isLid) {
-      const pushName = (data.pushName || '').toLowerCase();
-      if (pushName.includes('arthur')) {
-        resolvedPhone = '5511943635555';
-      } else if (pushName.includes('ana')) {
-        resolvedPhone = '5511944655555';
-      } else if (pushName.includes('jéssica') || pushName.includes('jessica')) {
-        resolvedPhone = '5511934550921';
-      } else {
-        resolvedPhone = process.env.JESSICA_PHONE || '5511934550921';
-      }
+      resolvedPhone = resolveLidPhone(data.pushName || '');
       console.log(`[Webhook] Mensagem via LID: ${senderPhone} → mapeado para ${resolvedPhone} (pushName: "${data.pushName || 'N/A'}")`);
     }
 

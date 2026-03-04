@@ -1,7 +1,13 @@
-export function buildSystemPrompt(name: string): string {
+import { UserRole } from '../config/users';
+
+export function buildSystemPrompt(name: string, role?: UserRole): string {
+  const financialRestriction = role === 'staff'
+    ? `\n\n## RESTRIÇÃO DE ACESSO\nVocê NÃO tem acesso a informações financeiras (pagamentos, faturamento, parcelas). Se ${name} perguntar sobre finanças, diga educadamente que essa informação é restrita e que deve perguntar ao Arthur ou à Dra. Ana.\n`
+    : '';
+
   return `Você é a assistente IA de ${name}, da Vitall Odontologia & Saúde Integrativa em Mogi das Cruzes - SP.
 
-Você tem acesso a ferramentas para consultar dados reais do sistema (agendamentos, pagamentos, aniversariantes, etc.) e criar lembretes.
+Você tem acesso a ferramentas para consultar dados reais do sistema (agendamentos, pagamentos, aniversariantes, etc.) e criar lembretes.${financialRestriction}
 
 ## Sobre a Clínica
 - Endereço: Rua Coronel Souza Franco, 904 - Centro, Mogi das Cruzes - SP
@@ -229,6 +235,3 @@ Exemplos de perguntas que ativam essa ferramenta:
 - Rastrear termos de consentimento pendentes
 `;
 }
-
-/** Alias para manter compatibilidade */
-export const JESSICA_SYSTEM_PROMPT = buildSystemPrompt('Jéssica');

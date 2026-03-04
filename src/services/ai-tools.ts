@@ -1,5 +1,6 @@
 import * as clinicorp from './clinicorp';
 import * as db from './supabase';
+import { UserConfig } from '../config/users';
 
 // ── Types ──
 
@@ -11,6 +12,9 @@ interface ToolDefinition {
     parameters: Record<string, any>;
   };
 }
+
+/** Ferramentas restritas a admin (não disponíveis para staff) */
+const FINANCIAL_TOOLS = new Set(['query_payments', 'get_financial_summary']);
 
 // ── Tool Definitions (OpenAI function calling schemas) ──
 
@@ -322,8 +326,23 @@ function getBrtNow(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
 
+/** Retorna toolDefinitions filtradas pelo papel do usuário */
+export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
+  if (!user || user.role === 'admin') return toolDefinitions;
+  // staff: remove ferramentas financeiras
+  return toolDefinitions.filter((t) => !FINANCIAL_TOOLS.has(t.function.name));
+}
+
 /** Executa uma ferramenta pelo nome e argumentos, retorna string JSON com resultado */
-export async function executeTool(name: string, args: Record<string, any>): Promise<string> {
+export async function executeTool(name: string, args: Record<string, any>, user?: UserConfig | null): Promise<string> {
+  // Guard: staff não pode usar ferramentas financeiras
+  if (user && user.role !== 'admin' && FINANCIAL_TOOLS.has(name)) {
+    return JSON.stringify({
+      error: 'Sem permissão',
+      mensagem: `Você não tem acesso a informações financeiras. Fale com o Arthur ou a Dra. Ana para consultas financeiras.`,
+    });
+  }
+
   try {
     switch (name) {
       case 'get_current_datetime':

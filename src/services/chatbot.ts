@@ -1,7 +1,8 @@
 import * as evolution from './evolution';
 import * as db from './supabase';
 import { chatWithTools, transcribeAudio, ChatMessage } from './openai';
-import { buildSystemPrompt } from '../templates/jessica-prompt';
+import { buildSystemPrompt } from '../templates/system-prompt';
+import { getUserByPhone } from '../config/users';
 
 /** Tipos de mídia detectáveis no payload da Evolution API */
 type MediaType = 'text' | 'image' | 'audio' | 'document';
@@ -154,8 +155,11 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       dynamicContext += `\n[Imagem] URL pública da imagem enviada: ${imageStorageUrl} — use esta URL no parâmetro "image_url" de upload_patient_photo se for foto de paciente.`;
     }
 
+    // Resolver permissões do usuário (para prompt e tools)
+    const userConfig = getUserByPhone(senderPhone);
+
     const messages: ChatMessage[] = [
-      { role: 'system', content: buildSystemPrompt(senderName) },
+      { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role) },
       { role: 'system', content: dynamicContext },
       ...contextMessages,
     ];
@@ -174,7 +178,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     }
 
     // Chamar GPT-4o com function calling (tools)
-    const aiResponse = await chatWithTools(messages, imageBase64, imageMime);
+    const aiResponse = await chatWithTools(messages, imageBase64, imageMime, userConfig);
 
     // Salvar resposta da IA no histórico
     await db.saveChatMessage(senderPhone, 'assistant', aiResponse, 'text');
