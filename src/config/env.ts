@@ -28,10 +28,15 @@ export const env = {
   // OpenAI (GPT-4o + Whisper)
   OPENAI_API_KEY: required('OPENAI_API_KEY'),
 
-  // Google Calendar (opcional — apenas para lembretes do Arthur)
+  // Google Calendar (OAuth — mesmo CLIENT_ID/SECRET para todas as contas)
   GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID || '',
   GOOGLE_CALENDAR_CLIENT_SECRET: process.env.GOOGLE_CALENDAR_CLIENT_SECRET || '',
   GOOGLE_CALENDAR_REFRESH_TOKEN: process.env.GOOGLE_CALENDAR_REFRESH_TOKEN || '',
+
+  // Google Calendar — conta da clínica (Jéssica + Dra. Ana)
+  GOOGLE_CALENDAR_CLINIC_REFRESH_TOKEN: process.env.GOOGLE_CALENDAR_CLINIC_REFRESH_TOKEN || '',
+  GOOGLE_CALENDAR_JESSICA_ID: process.env.GOOGLE_CALENDAR_JESSICA_ID || '',
+  GOOGLE_CALENDAR_ANA_ID: process.env.GOOGLE_CALENDAR_ANA_ID || '',
 
   // App
   PORT: process.env.PORT || '3000',

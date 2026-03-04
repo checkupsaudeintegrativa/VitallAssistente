@@ -20,30 +20,35 @@ app.get('/health', (_req, res) => {
 });
 
 // Teste Google Calendar
-app.get('/test/calendar', async (_req, res) => {
+app.get('/test/calendar', async (req, res) => {
   try {
-    const available = gcal.isAvailable();
+    const account = (req.query.account as 'personal' | 'clinic') || 'personal';
+    const calendarId = (req.query.calendarId as string) || 'primary';
+    const config = { account, calendarId };
+
+    const available = gcal.isAvailable(config);
     if (!available) {
       return res.json({
         status: 'error',
-        message: 'Google Calendar NÃO configurado — verifique GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET, GOOGLE_CALENDAR_REFRESH_TOKEN',
+        message: `Google Calendar NÃO configurado para conta "${account}"`,
         env_check: {
           client_id: !!env.GOOGLE_CALENDAR_CLIENT_ID,
           client_secret: !!env.GOOGLE_CALENDAR_CLIENT_SECRET,
-          refresh_token: !!env.GOOGLE_CALENDAR_REFRESH_TOKEN,
+          personal_token: !!env.GOOGLE_CALENDAR_REFRESH_TOKEN,
+          clinic_token: !!env.GOOGLE_CALENDAR_CLINIC_REFRESH_TOKEN,
         },
       });
     }
 
     const start = new Date(Date.now() + 60 * 60 * 1000);
-    const event = await gcal.createEvent({
+    const event = await gcal.createEvent(config, {
       title: 'Teste Vitall - pode deletar',
       datetime: start.toISOString(),
     });
 
     res.json({
       status: 'ok',
-      message: 'Google Calendar funcionando!',
+      message: `Google Calendar funcionando! (conta: ${account}, calendar: ${calendarId})`,
       event,
     });
   } catch (error: any) {

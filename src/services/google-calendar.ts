@@ -1,35 +1,43 @@
 import { google, calendar_v3 } from 'googleapis';
 import { env } from '../config/env';
+import { GoogleCalendarConfig, GoogleCalendarAccount } from '../config/users';
 
-// ── OAuth2 client (reutiliza mesma lógica do Gmail) ──
+// ── Multi-account OAuth2 clients ──
 
-let calendarClient: calendar_v3.Calendar | null = null;
+const calendarClients = new Map<GoogleCalendarAccount, calendar_v3.Calendar>();
 
-function getCalendar(): calendar_v3.Calendar | null {
-  if (calendarClient) return calendarClient;
+function getCalendarClient(account: GoogleCalendarAccount): calendar_v3.Calendar | null {
+  if (calendarClients.has(account)) return calendarClients.get(account)!;
 
-  const { GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET, GOOGLE_CALENDAR_REFRESH_TOKEN } = env;
-
-  if (!GOOGLE_CALENDAR_CLIENT_ID || !GOOGLE_CALENDAR_CLIENT_SECRET || !GOOGLE_CALENDAR_REFRESH_TOKEN) {
-    console.warn('[GoogleCalendar] Credenciais não configuradas — funcionalidade desabilitada');
+  const { GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET } = env;
+  if (!GOOGLE_CALENDAR_CLIENT_ID || !GOOGLE_CALENDAR_CLIENT_SECRET) {
+    console.warn(`[GoogleCalendar] CLIENT_ID/SECRET não configurados — conta "${account}" desabilitada`);
     return null;
   }
 
-  const oauth2 = new google.auth.OAuth2(
-    GOOGLE_CALENDAR_CLIENT_ID,
-    GOOGLE_CALENDAR_CLIENT_SECRET,
-  );
+  const refreshToken =
+    account === 'personal'
+      ? env.GOOGLE_CALENDAR_REFRESH_TOKEN
+      : env.GOOGLE_CALENDAR_CLINIC_REFRESH_TOKEN;
 
-  oauth2.setCredentials({ refresh_token: GOOGLE_CALENDAR_REFRESH_TOKEN });
+  if (!refreshToken) {
+    console.warn(`[GoogleCalendar] Refresh token não configurado para conta "${account}"`);
+    return null;
+  }
 
-  calendarClient = google.calendar({ version: 'v3', auth: oauth2 });
-  console.log('[GoogleCalendar] Cliente inicializado com sucesso');
-  return calendarClient;
+  const oauth2 = new google.auth.OAuth2(GOOGLE_CALENDAR_CLIENT_ID, GOOGLE_CALENDAR_CLIENT_SECRET);
+  oauth2.setCredentials({ refresh_token: refreshToken });
+
+  const client = google.calendar({ version: 'v3', auth: oauth2 });
+  calendarClients.set(account, client);
+  console.log(`[GoogleCalendar] Cliente inicializado para conta "${account}"`);
+  return client;
 }
 
-/** Verifica se o Google Calendar está configurado e funcional */
-export function isAvailable(): boolean {
-  return getCalendar() !== null;
+/** Verifica se o Google Calendar está disponível para uma config específica */
+export function isAvailable(config?: GoogleCalendarConfig): boolean {
+  if (!config) return false;
+  return getCalendarClient(config.account) !== null;
 }
 
 // ── Criar evento ──
@@ -41,8 +49,8 @@ interface CreateEventParams {
   description?: string;
 }
 
-export async function createEvent(params: CreateEventParams): Promise<{ id: string; htmlLink: string } | null> {
-  const cal = getCalendar();
+export async function createEvent(config: GoogleCalendarConfig, params: CreateEventParams): Promise<{ id: string; htmlLink: string } | null> {
+  const cal = getCalendarClient(config.account);
   if (!cal) return null;
 
   const start = new Date(params.datetime);
@@ -75,17 +83,17 @@ export async function createEvent(params: CreateEventParams): Promise<{ id: stri
 
   try {
     const res = await cal.events.insert({
-      calendarId: 'primary',
+      calendarId: config.calendarId,
       requestBody: event,
     });
 
-    console.log(`[GoogleCalendar] Evento criado: ${res.data.id} — "${params.title}"`);
+    console.log(`[GoogleCalendar] Evento criado: ${res.data.id} — "${params.title}" (calendar: ${config.calendarId})`);
     return {
       id: res.data.id!,
       htmlLink: res.data.htmlLink || '',
     };
   } catch (error: any) {
-    console.error('[GoogleCalendar] Erro ao criar evento:', error.message);
+    console.error(`[GoogleCalendar] Erro ao criar evento (calendar: ${config.calendarId}):`, error.message);
     return null;
   }
 }
@@ -100,8 +108,8 @@ interface CalendarReminder {
   created_at: string;
 }
 
-export async function listUpcomingEvents(daysAhead: number = 30): Promise<CalendarReminder[]> {
-  const cal = getCalendar();
+export async function listUpcomingEvents(config: GoogleCalendarConfig, daysAhead: number = 30): Promise<CalendarReminder[]> {
+  const cal = getCalendarClient(config.account);
   if (!cal) return [];
 
   const now = new Date();
@@ -109,7 +117,7 @@ export async function listUpcomingEvents(daysAhead: number = 30): Promise<Calend
 
   try {
     const res = await cal.events.list({
-      calendarId: 'primary',
+      calendarId: config.calendarId,
       timeMin: now.toISOString(),
       timeMax: future.toISOString(),
       singleEvents: true,
@@ -127,26 +135,26 @@ export async function listUpcomingEvents(daysAhead: number = 30): Promise<Calend
       created_at: e.created || '',
     }));
   } catch (error: any) {
-    console.error('[GoogleCalendar] Erro ao listar eventos:', error.message);
+    console.error(`[GoogleCalendar] Erro ao listar eventos (calendar: ${config.calendarId}):`, error.message);
     return [];
   }
 }
 
 // ── Deletar evento ──
 
-export async function deleteEvent(eventId: string): Promise<boolean> {
-  const cal = getCalendar();
+export async function deleteEvent(config: GoogleCalendarConfig, eventId: string): Promise<boolean> {
+  const cal = getCalendarClient(config.account);
   if (!cal) return false;
 
   try {
     await cal.events.delete({
-      calendarId: 'primary',
+      calendarId: config.calendarId,
       eventId,
     });
-    console.log(`[GoogleCalendar] Evento deletado: ${eventId}`);
+    console.log(`[GoogleCalendar] Evento deletado: ${eventId} (calendar: ${config.calendarId})`);
     return true;
   } catch (error: any) {
-    console.error('[GoogleCalendar] Erro ao deletar evento:', error.message);
+    console.error(`[GoogleCalendar] Erro ao deletar evento (calendar: ${config.calendarId}):`, error.message);
     return false;
   }
 }

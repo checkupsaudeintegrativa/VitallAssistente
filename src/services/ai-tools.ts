@@ -1,7 +1,7 @@
 import * as clinicorp from './clinicorp';
 import * as db from './supabase';
 import * as gcal from './google-calendar';
-import { UserConfig } from '../config/users';
+import { UserConfig, GoogleCalendarConfig } from '../config/users';
 
 // ── Types ──
 
@@ -327,14 +327,40 @@ function getBrtNow(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
 
+/** Resolve qual GoogleCalendarConfig usar. Se targetCalendar for informado, busca em crossCalendars. */
+function resolveCalendarConfig(user?: UserConfig | null, targetCalendar?: string): GoogleCalendarConfig | null {
+  const calConfig = user?.features?.googleCalendar;
+  if (!calConfig) return null;
+
+  if (targetCalendar && calConfig.crossCalendars) {
+    const cross = calConfig.crossCalendars.find(
+      (c) => c.name.toLowerCase() === targetCalendar.toLowerCase(),
+    );
+    if (cross) {
+      return { account: calConfig.account, calendarId: cross.calendarId };
+    }
+  }
+
+  return calConfig;
+}
+
 /** Retorna toolDefinitions filtradas pelo papel e features do usuário */
 export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
   let tools = user && user.role !== 'admin'
     ? toolDefinitions.filter((t) => !FINANCIAL_TOOLS.has(t.function.name))
     : [...toolDefinitions];
 
-  // Se o usuário tem Google Calendar, adapta as tools de lembrete
-  if (user?.features?.googleCalendar && gcal.isAvailable()) {
+  const calConfig = user?.features?.googleCalendar;
+  const hasCrossCalendars = calConfig?.crossCalendars && calConfig.crossCalendars.length > 0;
+  const crossNames = calConfig?.crossCalendars?.map((c) => c.name).join(', ') || '';
+
+  // Se o usuário tem Google Calendar configurado e disponível, adapta as tools de lembrete
+  if (calConfig && gcal.isAvailable(calConfig)) {
+    // Parâmetro target_calendar (só para users com crossCalendars)
+    const targetCalendarParam = hasCrossCalendars
+      ? { target_calendar: { type: 'string', description: `Calendário alvo. Omita para usar o seu próprio. Valores possíveis: ${crossNames}` } }
+      : {};
+
     tools = tools.map((t) => {
       if (t.function.name === 'create_reminder') {
         return {
@@ -349,6 +375,7 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
                 datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
                 phone: { type: 'string', description: 'Opcional — ignorado para Google Calendar.' },
                 recurring: { type: 'boolean', description: 'true = evento recorrente diário até confirmar. false = evento único. Default: true para tarefas, false para horários fixos.' },
+                ...targetCalendarParam,
               },
               required: ['title', 'datetime'],
             },
@@ -361,6 +388,11 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           function: {
             ...t.function,
             description: 'Lista todos os lembretes/eventos pendentes no Google Calendar.',
+            parameters: {
+              type: 'object',
+              properties: { ...targetCalendarParam },
+              required: [],
+            },
           },
         };
       }
@@ -370,6 +402,14 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           function: {
             ...t.function,
             description: 'Remove um lembrete/evento do Google Calendar pelo ID.',
+            parameters: {
+              type: 'object',
+              properties: {
+                reminder_id: { type: 'string', description: 'ID do evento no Google Calendar' },
+                ...targetCalendarParam,
+              },
+              required: ['reminder_id'],
+            },
           },
         };
       }
@@ -379,6 +419,14 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           function: {
             ...t.function,
             description: 'Confirma que a tarefa foi feita — remove o evento do Google Calendar.',
+            parameters: {
+              type: 'object',
+              properties: {
+                reminder_id: { type: 'string', description: 'ID do evento no Google Calendar' },
+                ...targetCalendarParam,
+              },
+              required: ['reminder_id'],
+            },
           },
         };
       }
@@ -423,16 +471,16 @@ export async function executeTool(name: string, args: Record<string, any>, user?
         return executeGetFinancialSummary(args.date_from, args.date_to);
 
       case 'create_reminder':
-        return executeCreateReminder(args.title, args.datetime, args.phone, args.recurring, user);
+        return executeCreateReminder(args.title, args.datetime, args.phone, args.recurring, user, args.target_calendar);
 
       case 'list_reminders':
-        return executeListReminders(user);
+        return executeListReminders(user, args.target_calendar);
 
       case 'delete_reminder':
-        return executeDeleteReminder(args.reminder_id, user);
+        return executeDeleteReminder(args.reminder_id, user, args.target_calendar);
 
       case 'confirm_reminder_done':
-        return executeConfirmReminderDone(args.reminder_id, user);
+        return executeConfirmReminderDone(args.reminder_id, user, args.target_calendar);
 
       case 'query_procedures':
         return executeQueryProcedures(args.date_from, args.date_to, args.category);
@@ -649,13 +697,13 @@ async function executeGetFinancialSummary(dateFrom: string, dateTo: string): Pro
   return JSON.stringify(raw || { error: 'Sem dados financeiros para o período' });
 }
 
-async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean, user?: UserConfig | null): Promise<string> {
-  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
-  console.log(`[Reminder] user=${user?.name || 'null'}, googleCalendar=${user?.features?.googleCalendar}, gcalAvailable=${gcal.isAvailable()}, useCalendar=${useCalendar}`);
+async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean, user?: UserConfig | null, targetCalendar?: string): Promise<string> {
+  const calConfig = resolveCalendarConfig(user, targetCalendar);
+  const useCalendar = calConfig && gcal.isAvailable(calConfig);
+  console.log(`[Reminder] user=${user?.name || 'null'}, calConfig=${JSON.stringify(calConfig)}, useCalendar=${useCalendar}, target=${targetCalendar || 'own'}`);
 
   if (useCalendar) {
-    // Arthur → Google Calendar
-    const event = await gcal.createEvent({
+    const event = await gcal.createEvent(calConfig, {
       title,
       datetime,
       recurring: recurring || false,
@@ -669,6 +717,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
         titulo: title,
         horario: remindDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
         via: 'Google Calendar',
+        calendario: targetCalendar || user?.name || 'próprio',
         recorrente: recurring || false,
       });
     }
@@ -676,7 +725,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
     return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o evento no Google Calendar' });
   }
 
-  // Outros → Supabase
+  // Fallback → Supabase
   const result = await db.createReminder(title, datetime, phone, recurring);
 
   if (result) {
@@ -694,11 +743,12 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
   return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o lembrete' });
 }
 
-async function executeConfirmReminderDone(reminderId: string, user?: UserConfig | null): Promise<string> {
-  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+async function executeConfirmReminderDone(reminderId: string, user?: UserConfig | null, targetCalendar?: string): Promise<string> {
+  const calConfig = resolveCalendarConfig(user, targetCalendar);
+  const useCalendar = calConfig && gcal.isAvailable(calConfig);
 
   if (useCalendar) {
-    const success = await gcal.deleteEvent(reminderId);
+    const success = await gcal.deleteEvent(calConfig, reminderId);
     return JSON.stringify({
       sucesso: success,
       id: reminderId,
@@ -714,11 +764,12 @@ async function executeConfirmReminderDone(reminderId: string, user?: UserConfig 
   });
 }
 
-async function executeListReminders(user?: UserConfig | null): Promise<string> {
-  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+async function executeListReminders(user?: UserConfig | null, targetCalendar?: string): Promise<string> {
+  const calConfig = resolveCalendarConfig(user, targetCalendar);
+  const useCalendar = calConfig && gcal.isAvailable(calConfig);
 
   if (useCalendar) {
-    const events = await gcal.listUpcomingEvents(30);
+    const events = await gcal.listUpcomingEvents(calConfig, 30);
 
     const list = events.map((e) => ({
       id: e.id,
@@ -731,6 +782,7 @@ async function executeListReminders(user?: UserConfig | null): Promise<string> {
     return JSON.stringify({
       total: list.length,
       lembretes: list,
+      calendario: targetCalendar || user?.name || 'próprio',
     });
   }
 
@@ -749,11 +801,12 @@ async function executeListReminders(user?: UserConfig | null): Promise<string> {
   });
 }
 
-async function executeDeleteReminder(reminderId: string, user?: UserConfig | null): Promise<string> {
-  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+async function executeDeleteReminder(reminderId: string, user?: UserConfig | null, targetCalendar?: string): Promise<string> {
+  const calConfig = resolveCalendarConfig(user, targetCalendar);
+  const useCalendar = calConfig && gcal.isAvailable(calConfig);
 
   if (useCalendar) {
-    const success = await gcal.deleteEvent(reminderId);
+    const success = await gcal.deleteEvent(calConfig, reminderId);
     return JSON.stringify({
       sucesso: success,
       id: reminderId,

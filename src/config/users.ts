@@ -1,4 +1,19 @@
+import { env } from './env';
+
 export type UserRole = 'admin' | 'staff';
+
+export type GoogleCalendarAccount = 'personal' | 'clinic';
+
+export interface CrossCalendarConfig {
+  name: string;
+  calendarId: string;
+}
+
+export interface GoogleCalendarConfig {
+  account: GoogleCalendarAccount;
+  calendarId: string;
+  crossCalendars?: CrossCalendarConfig[];
+}
 
 export interface UserConfig {
   name: string;
@@ -6,7 +21,7 @@ export interface UserConfig {
   phones: string[];
   features: {
     financial: boolean;
-    googleCalendar?: boolean;
+    googleCalendar?: GoogleCalendarConfig;
   };
 }
 
@@ -15,19 +30,35 @@ const USERS: UserConfig[] = [
     name: 'Jéssica',
     role: 'staff',
     phones: ['5511934550921', '5511917293419'],
-    features: { financial: false },
+    features: {
+      financial: false,
+      googleCalendar: env.GOOGLE_CALENDAR_JESSICA_ID
+        ? { account: 'clinic', calendarId: env.GOOGLE_CALENDAR_JESSICA_ID }
+        : undefined,
+    },
   },
   {
     name: 'Arthur',
     role: 'admin',
     phones: ['5511943635555'],
-    features: { financial: true, googleCalendar: true },
+    features: { financial: true, googleCalendar: { account: 'personal', calendarId: 'primary' } },
   },
   {
     name: 'Dra. Ana',
     role: 'admin',
     phones: ['5511944655555'],
-    features: { financial: true },
+    features: {
+      financial: true,
+      googleCalendar: env.GOOGLE_CALENDAR_ANA_ID
+        ? {
+            account: 'clinic',
+            calendarId: env.GOOGLE_CALENDAR_ANA_ID,
+            crossCalendars: env.GOOGLE_CALENDAR_JESSICA_ID
+              ? [{ name: 'Jéssica', calendarId: env.GOOGLE_CALENDAR_JESSICA_ID }]
+              : undefined,
+          }
+        : undefined,
+    },
   },
 ];
 

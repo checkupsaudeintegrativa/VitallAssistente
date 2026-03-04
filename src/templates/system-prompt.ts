@@ -1,13 +1,16 @@
-import { UserRole } from '../config/users';
+import { UserRole, GoogleCalendarConfig } from '../config/users';
 
-export function buildSystemPrompt(name: string, role?: UserRole, features?: { googleCalendar?: boolean }): string {
+export function buildSystemPrompt(name: string, role?: UserRole, features?: { googleCalendar?: GoogleCalendarConfig }): string {
   const financialRestriction = role === 'staff'
     ? `\n\n## RESTRIÇÃO DE ACESSO\nVocê NÃO tem acesso a informações financeiras (pagamentos, faturamento, parcelas). Se ${name} perguntar sobre finanças, diga educadamente que essa informação é restrita e que deve perguntar ao Arthur ou à Dra. Ana.\n`
     : '';
 
-  const calendarNote = features?.googleCalendar
-    ? `\n\n## LEMBRETES VIA GOOGLE CALENDAR (IMPORTANTE)
-Os lembretes de ${name} são criados diretamente no *Google Calendar* dele, NÃO via WhatsApp.
+  const calConfig = features?.googleCalendar;
+
+  let calendarNote = '';
+  if (calConfig) {
+    calendarNote = `\n\n## LEMBRETES VIA GOOGLE CALENDAR (IMPORTANTE)
+Os lembretes de ${name} são criados diretamente no *Google Calendar*, NÃO via WhatsApp.
 
 Quando ${name} pedir para lembrar de algo:
 1. Use a ferramenta *create_reminder* normalmente (mesmo nome de ferramenta)
@@ -20,8 +23,25 @@ Quando deletar/confirmar: remove do Google Calendar
 
 Exemplo de resposta ao criar lembrete:
 "Lembrete adicionado ao seu Google Calendar: *Ligar para paciente Maria* amanhã às 14h 📅"
-\n`
-    : '';
+`;
+
+    if (calConfig.crossCalendars && calConfig.crossCalendars.length > 0) {
+      const names = calConfig.crossCalendars.map((c) => c.name).join(', ');
+      calendarNote += `
+### Acesso a calendários de outras pessoas
+${name} também pode gerenciar lembretes de: *${names}*.
+
+Quando ${name} mencionar uma dessas pessoas em contexto de lembrete, use o parâmetro *target_calendar* com o nome da pessoa:
+- "lembretes da Jéssica" → list_reminders com target_calendar="Jéssica"
+- "cria lembrete pra Jéssica" → create_reminder com target_calendar="Jéssica"
+- "cancela o lembrete X da Jéssica" → delete_reminder com target_calendar="Jéssica"
+
+Se ${name} não mencionar ninguém, os lembretes são do próprio calendário de ${name}.
+`;
+    }
+
+    calendarNote += '\n';
+  }
 
   return `Você é a assistente IA de ${name}, da Vitall Odontologia & Saúde Integrativa em Mogi das Cruzes - SP.
 
