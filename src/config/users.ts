@@ -7,6 +7,8 @@ export type GoogleCalendarAccount = 'personal' | 'clinic';
 export interface CrossCalendarConfig {
   name: string;
   calendarId: string;
+  canView?: boolean;   // pode listar eventos do calendário (default: false)
+  notify?: boolean;    // recebe WhatsApp quando eventos disparam no cron (default: false)
 }
 
 export interface GoogleCalendarConfig {
@@ -33,7 +35,13 @@ const USERS: UserConfig[] = [
     features: {
       financial: false,
       googleCalendar: env.GOOGLE_CALENDAR_JESSICA_ID
-        ? { account: 'clinic', calendarId: env.GOOGLE_CALENDAR_JESSICA_ID }
+        ? {
+            account: 'clinic' as GoogleCalendarAccount,
+            calendarId: env.GOOGLE_CALENDAR_JESSICA_ID,
+            crossCalendars: env.GOOGLE_CALENDAR_ANA_ID
+              ? [{ name: 'Dra. Ana', calendarId: env.GOOGLE_CALENDAR_ANA_ID }]
+              : undefined,
+          }
         : undefined,
     },
   },
@@ -54,7 +62,7 @@ const USERS: UserConfig[] = [
             account: 'clinic',
             calendarId: env.GOOGLE_CALENDAR_ANA_ID,
             crossCalendars: env.GOOGLE_CALENDAR_JESSICA_ID
-              ? [{ name: 'Jéssica', calendarId: env.GOOGLE_CALENDAR_JESSICA_ID }]
+              ? [{ name: 'Jéssica', calendarId: env.GOOGLE_CALENDAR_JESSICA_ID, canView: true, notify: true }]
               : undefined,
           }
         : undefined,

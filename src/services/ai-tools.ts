@@ -356,9 +356,16 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
 
   // Se o usuário tem Google Calendar configurado e disponível, adapta as tools de lembrete
   if (calConfig && gcal.isAvailable(calConfig)) {
-    // Parâmetro target_calendar (só para users com crossCalendars)
-    const targetCalendarParam = hasCrossCalendars
+    // Parâmetro target_calendar para criação (todos os cross calendars)
+    const createTargetParam = hasCrossCalendars
       ? { target_calendar: { type: 'string', description: `Calendário alvo. Omita para usar o seu próprio. Valores possíveis: ${crossNames}` } }
+      : {};
+
+    // Parâmetro target_calendar para visualização (só cross calendars com canView)
+    const viewableCross = calConfig?.crossCalendars?.filter((c) => c.canView) || [];
+    const viewNames = viewableCross.map((c) => c.name).join(', ');
+    const viewTargetParam = viewableCross.length > 0
+      ? { target_calendar: { type: 'string', description: `Calendário alvo. Omita para usar o seu próprio. Valores possíveis: ${viewNames}` } }
       : {};
 
     tools = tools.map((t) => {
@@ -367,15 +374,15 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           ...t,
           function: {
             ...t.function,
-            description: 'Cria um lembrete no Google Calendar do usuário. O evento aparece no calendário com notificação automática. NÃO precisa do parâmetro phone — vai direto pro calendário. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT). Se a pessoa não especificar que é único, crie como recorrente (recurring=true).',
+            description: 'Cria um lembrete. NÃO precisa do parâmetro phone. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT). Se a pessoa não especificar que é único, crie como recorrente (recurring=true).',
             parameters: {
               type: 'object',
               properties: {
                 title: { type: 'string', description: 'Descrição do lembrete. Ex: "Ligar para paciente Maria"' },
                 datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
-                phone: { type: 'string', description: 'Opcional — ignorado para Google Calendar.' },
-                recurring: { type: 'boolean', description: 'true = evento recorrente diário até confirmar. false = evento único. Default: true para tarefas, false para horários fixos.' },
-                ...targetCalendarParam,
+                phone: { type: 'string', description: 'Opcional — ignorado.' },
+                recurring: { type: 'boolean', description: 'true = lembra todo dia até confirmar. false = lembra uma vez só. Default: true para tarefas, false para horários fixos.' },
+                ...createTargetParam,
               },
               required: ['title', 'datetime'],
             },
@@ -387,10 +394,10 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           ...t,
           function: {
             ...t.function,
-            description: 'Lista todos os lembretes/eventos pendentes no Google Calendar.',
+            description: 'Lista todos os lembretes pendentes.',
             parameters: {
               type: 'object',
-              properties: { ...targetCalendarParam },
+              properties: { ...viewTargetParam },
               required: [],
             },
           },
@@ -401,12 +408,12 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           ...t,
           function: {
             ...t.function,
-            description: 'Remove um lembrete/evento do Google Calendar pelo ID.',
+            description: 'Remove um lembrete pelo ID.',
             parameters: {
               type: 'object',
               properties: {
-                reminder_id: { type: 'string', description: 'ID do evento no Google Calendar' },
-                ...targetCalendarParam,
+                reminder_id: { type: 'string', description: 'ID do lembrete' },
+                ...viewTargetParam,
               },
               required: ['reminder_id'],
             },
@@ -418,12 +425,12 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           ...t,
           function: {
             ...t.function,
-            description: 'Confirma que a tarefa foi feita — remove o evento do Google Calendar.',
+            description: 'Confirma que a tarefa foi feita — para de lembrar.',
             parameters: {
               type: 'object',
               properties: {
-                reminder_id: { type: 'string', description: 'ID do evento no Google Calendar' },
-                ...targetCalendarParam,
+                reminder_id: { type: 'string', description: 'ID do lembrete' },
+                ...viewTargetParam,
               },
               required: ['reminder_id'],
             },
@@ -716,13 +723,12 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
         id: event.id,
         titulo: title,
         horario: remindDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
-        via: 'Google Calendar',
-        calendario: targetCalendar || user?.name || 'próprio',
+        calendario: targetCalendar || undefined,
         recorrente: recurring || false,
       });
     }
 
-    return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o evento no Google Calendar' });
+    return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o lembrete' });
   }
 
   // Fallback → Supabase
@@ -748,11 +754,11 @@ async function executeConfirmReminderDone(reminderId: string, user?: UserConfig 
   const useCalendar = calConfig && gcal.isAvailable(calConfig);
 
   if (useCalendar) {
-    const success = await gcal.deleteEvent(calConfig, reminderId);
+    const success = await gcal.markEventDone(calConfig, reminderId);
     return JSON.stringify({
       sucesso: success,
       id: reminderId,
-      mensagem: success ? 'Lembrete confirmado como feito e removido do Google Calendar!' : 'Não encontrei esse evento no Google Calendar.',
+      mensagem: success ? 'Lembrete confirmado como feito!' : 'Não encontrei esse lembrete.',
     });
   }
 
@@ -769,6 +775,28 @@ async function executeListReminders(user?: UserConfig | null, targetCalendar?: s
   const useCalendar = calConfig && gcal.isAvailable(calConfig);
 
   if (useCalendar) {
+    // Cross-calendar: mostra eventos do dia (passados + futuros) com status
+    if (targetCalendar) {
+      const today = getBrtNow().toISOString().split('T')[0];
+      const events = await gcal.listEventsForDate(calConfig, today);
+
+      const list = events.map((e) => ({
+        id: e.id,
+        titulo: e.title,
+        horario: e.datetime ? new Date(e.datetime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'N/A',
+        recorrente: e.recurring,
+        feito: e.done,
+      }));
+
+      return JSON.stringify({
+        total: list.length,
+        lembretes: list,
+        calendario: targetCalendar,
+        data: today,
+      });
+    }
+
+    // Calendário próprio: mostra próximos 30 dias
     const events = await gcal.listUpcomingEvents(calConfig, 30);
 
     const list = events.map((e) => ({
@@ -776,13 +804,11 @@ async function executeListReminders(user?: UserConfig | null, targetCalendar?: s
       titulo: e.title,
       horario: e.datetime ? new Date(e.datetime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'N/A',
       recorrente: e.recurring,
-      via: 'Google Calendar',
     }));
 
     return JSON.stringify({
       total: list.length,
       lembretes: list,
-      calendario: targetCalendar || user?.name || 'próprio',
     });
   }
 
@@ -810,7 +836,7 @@ async function executeDeleteReminder(reminderId: string, user?: UserConfig | nul
     return JSON.stringify({
       sucesso: success,
       id: reminderId,
-      mensagem: success ? 'Lembrete removido do Google Calendar' : 'Não encontrei esse evento no Google Calendar',
+      mensagem: success ? 'Lembrete removido' : 'Não encontrei esse lembrete',
     });
   }
 

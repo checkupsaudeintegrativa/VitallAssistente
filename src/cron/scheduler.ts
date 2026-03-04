@@ -13,6 +13,8 @@ import {
 } from '../services/supabase';
 import { listAppointments } from '../services/clinicorp';
 import { sendText } from '../services/evolution';
+import { USER_BY_PHONE } from '../config/users';
+import * as gcal from '../services/google-calendar';
 
 // ── Procedimentos que exigem termo de consentimento ──
 const CONSENT_KEYWORDS = [
@@ -28,6 +30,16 @@ function requiresConsent(procedureText: string): string | null {
     if (lower.includes(kw)) return kw;
   }
   return null;
+}
+
+// ── Anti-duplicata in-memory para lembretes do Google Calendar ──
+const calendarSentMap = new Map<string, number>();
+
+function cleanSentMap(): void {
+  const oneHourAgo = Date.now() - 60 * 60 * 1000;
+  for (const [key, ts] of calendarSentMap) {
+    if (ts < oneHourAgo) calendarSentMap.delete(key);
+  }
 }
 
 export function startScheduler(): void {
@@ -152,9 +164,109 @@ export function startScheduler(): void {
     }
   });
 
+  // Lembretes do Google Calendar — a cada 2 min (consulta eventos nos próximos 5 min)
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      cleanSentMap();
+
+      const users = Array.from(USER_BY_PHONE.values());
+      const seen = new Set<string>();
+      const uniqueUsers = users.filter((u) => {
+        if (seen.has(u.name)) return false;
+        seen.add(u.name);
+        return true;
+      });
+
+      for (const user of uniqueUsers) {
+        const calConfig = user.features.googleCalendar;
+        if (!calConfig) continue;
+
+        // Calendário principal do user
+        const events = await gcal.getDueEvents(calConfig);
+        for (const event of events) {
+          if (calendarSentMap.has(event.id)) continue;
+
+          await sendText(user.phones[0], `*Lembrete:* ${event.title}`);
+          calendarSentMap.set(event.id, Date.now());
+          console.log(`[Cron:Calendar] Lembrete enviado para ${user.name}: "${event.title}"`);
+
+          // Único → marca ✅ automaticamente (não aparece no digest)
+          // Recorrente → mantém 🔔 (digest às 7h30/17h vai lembrar de novo)
+          if (!event.recurring) {
+            await gcal.markEventDone(calConfig, event.id);
+          }
+        }
+
+        // Cross-calendars com notificação (ex: Dra. Ana recebe lembretes da Jéssica)
+        if (calConfig.crossCalendars) {
+          for (const cross of calConfig.crossCalendars.filter((c) => c.notify)) {
+            const crossConfig = { account: calConfig.account, calendarId: cross.calendarId };
+            const crossEvents = await gcal.getDueEvents(crossConfig);
+
+            for (const event of crossEvents) {
+              const crossKey = `${event.id}:cross:${user.name}`;
+              if (calendarSentMap.has(crossKey)) continue;
+
+              await sendText(user.phones[0], `*Lembrete (${cross.name}):* ${event.title}`);
+              calendarSentMap.set(crossKey, Date.now());
+              console.log(`[Cron:Calendar] Lembrete cross (${cross.name}) enviado para ${user.name}: "${event.title}"`);
+            }
+          }
+        }
+      }
+    } catch (error: any) {
+      console.error('[Cron:Calendar] Erro ao processar lembretes do Calendar:', error.message);
+    }
+  });
+
+  // Digest de lembretes pendentes — 7h30 BRT (10:30 UTC) e 17h BRT (20:00 UTC)
+  async function sendPendingDigest(): Promise<void> {
+    const users = Array.from(USER_BY_PHONE.values());
+    const seen = new Set<string>();
+    const uniqueUsers = users.filter((u) => {
+      if (seen.has(u.name)) return false;
+      seen.add(u.name);
+      return true;
+    });
+
+    for (const user of uniqueUsers) {
+      const calConfig = user.features.googleCalendar;
+      if (!calConfig) continue;
+
+      try {
+        const pending = await gcal.listPendingReminders(calConfig);
+        // Só inclui lembretes recorrentes (tarefas pendentes)
+        const tasks = pending.filter((e) => e.recurring);
+        if (tasks.length === 0) continue;
+
+        const lines = tasks.map((t, i) => `${i + 1}. ${t.title}`);
+        const separator = '\n─────────\n';
+        const header = tasks.length === 1 ? '⏰ *Lembrete pendente:*' : '⏰ *Lembretes pendentes:*';
+        const text = `${header}\n\n${lines.join(separator)}`;
+
+        await sendText(user.phones[0], text);
+        console.log(`[Cron:Digest] ${tasks.length} lembrete(s) pendente(s) enviado(s) para ${user.name}`);
+      } catch (error: any) {
+        console.error(`[Cron:Digest] Erro ao enviar digest para ${user.name}:`, error.message);
+      }
+    }
+  }
+
+  cron.schedule('30 10 * * *', async () => {
+    console.log('[Cron:Digest] Digest 7h30 BRT');
+    await sendPendingDigest();
+  });
+
+  cron.schedule('0 20 * * *', async () => {
+    console.log('[Cron:Digest] Digest 17h BRT');
+    await sendPendingDigest();
+  });
+
   console.log('[Cron] Scheduler de lembretes iniciado:');
   console.log('  - */5 * * * *: Lembretes pessoais (a cada 5 min)');
   console.log('  - */5 * * * *: Lembretes de foto de paciente (a cada 5 min)');
   console.log('  - 08:00 UTC (05:00 BRT): Alerta termos de consentimento (seg-sáb)');
   console.log('  - */5 * * * *: Follow-up termos de consentimento (a cada 5 min)');
+  console.log('  - */2 * * * *: Lembretes do Google Calendar (a cada 2 min)');
+  console.log('  - 10:30/20:00 UTC (7h30/17h BRT): Digest de lembretes pendentes');
 }
