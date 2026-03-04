@@ -1,7 +1,7 @@
 import * as evolution from './evolution';
 import * as db from './supabase';
 import { chatWithTools, transcribeAudio, ChatMessage } from './openai';
-import { JESSICA_SYSTEM_PROMPT } from '../templates/jessica-prompt';
+import { buildSystemPrompt } from '../templates/jessica-prompt';
 
 /** Tipos de mídia detectáveis no payload da Evolution API */
 type MediaType = 'text' | 'image' | 'audio' | 'document';
@@ -155,7 +155,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     }
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: JESSICA_SYSTEM_PROMPT },
+      { role: 'system', content: buildSystemPrompt(senderName) },
       { role: 'system', content: dynamicContext },
       ...contextMessages,
     ];

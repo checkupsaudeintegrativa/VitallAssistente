@@ -325,4 +325,90 @@ export async function findConsentByPatientAndDate(
   return data && data.length > 0 ? data[0] : null;
 }
 
+// ── Cron helpers (lembretes, fotos, termos) ──
+
+/** Busca lembretes de foto pendentes e vencidos */
+export async function getPendingPhotoReminders(): Promise<
+  { id: string; description: string; patient_name: string; reminder_count: number }[]
+> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('patient_photo_reminders')
+    .select('id, description, patient_name, reminder_count')
+    .eq('status', 'pending')
+    .lte('next_reminder_at', now);
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar photo reminders:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/** Atualiza próximo lembrete de foto */
+export async function updatePhotoReminderNext(
+  reminderId: string,
+  nextAt: string,
+  count: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('patient_photo_reminders')
+    .update({ next_reminder_at: nextAt, reminder_count: count })
+    .eq('id', reminderId);
+
+  if (error) {
+    console.error('[Supabase] Erro ao atualizar photo reminder:', error.message);
+  }
+}
+
+/** Busca termos de consentimento pendentes e vencidos */
+export async function getPendingConsentTerms(): Promise<
+  { id: string; patient_name: string; procedure_type: string; appointment_date: string; reminder_count: number }[]
+> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('consent_terms')
+    .select('id, patient_name, procedure_type, appointment_date, reminder_count')
+    .eq('status', 'pending')
+    .lte('next_reminder_at', now);
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar consent terms:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/** Busca termos de consentimento para uma data (para cron não duplicar) */
+export async function getConsentTermsForDate(
+  date: string
+): Promise<{ id: string; patient_name: string; procedure_type: string; status: string }[]> {
+  const { data, error } = await supabase
+    .from('consent_terms')
+    .select('id, patient_name, procedure_type, status')
+    .eq('appointment_date', date);
+
+  if (error) {
+    console.error('[Supabase] Erro ao buscar consent terms for date:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/** Atualiza próximo lembrete de termo */
+export async function updateConsentReminderNext(
+  termId: string,
+  nextAt: string,
+  count: number
+): Promise<void> {
+  const { error } = await supabase
+    .from('consent_terms')
+    .update({ next_reminder_at: nextAt, reminder_count: count })
+    .eq('id', termId);
+
+  if (error) {
+    console.error('[Supabase] Erro ao atualizar consent reminder:', error.message);
+  }
+}
+
 export { supabase };
