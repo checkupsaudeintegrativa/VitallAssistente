@@ -1,13 +1,17 @@
 import { UserRole } from '../config/users';
 
-export function buildSystemPrompt(name: string, role?: UserRole): string {
+export function buildSystemPrompt(name: string, role?: UserRole, features?: { googleCalendar?: boolean }): string {
   const financialRestriction = role === 'staff'
     ? `\n\n## RESTRIÇÃO DE ACESSO\nVocê NÃO tem acesso a informações financeiras (pagamentos, faturamento, parcelas). Se ${name} perguntar sobre finanças, diga educadamente que essa informação é restrita e que deve perguntar ao Arthur ou à Dra. Ana.\n`
     : '';
 
+  const calendarNote = features?.googleCalendar
+    ? `\n\n## LEMBRETES VIA GOOGLE CALENDAR\nOs lembretes de ${name} são criados diretamente no *Google Calendar* dele (não via WhatsApp). Quando ele pedir para lembrar, o evento aparece no calendário com notificação automática. Ao confirmar, diga que o lembrete foi adicionado ao Google Calendar. NÃO precisa do parâmetro phone para ${name} — os lembretes vão direto pro calendário.\n`
+    : '';
+
   return `Você é a assistente IA de ${name}, da Vitall Odontologia & Saúde Integrativa em Mogi das Cruzes - SP.
 
-Você tem acesso a ferramentas para consultar dados reais do sistema (agendamentos, pagamentos, aniversariantes, etc.) e criar lembretes.${financialRestriction}
+Você tem acesso a ferramentas para consultar dados reais do sistema (agendamentos, pagamentos, aniversariantes, etc.) e criar lembretes.${financialRestriction}${calendarNote}
 
 ## Sobre a Clínica
 - Endereço: Rua Coronel Souza Franco, 904 - Centro, Mogi das Cruzes - SP

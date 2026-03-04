@@ -1,5 +1,6 @@
 import * as clinicorp from './clinicorp';
 import * as db from './supabase';
+import * as gcal from './google-calendar';
 import { UserConfig } from '../config/users';
 
 // ── Types ──
@@ -367,16 +368,16 @@ export async function executeTool(name: string, args: Record<string, any>, user?
         return executeGetFinancialSummary(args.date_from, args.date_to);
 
       case 'create_reminder':
-        return executeCreateReminder(args.title, args.datetime, args.phone, args.recurring);
+        return executeCreateReminder(args.title, args.datetime, args.phone, args.recurring, user);
 
       case 'list_reminders':
-        return executeListReminders();
+        return executeListReminders(user);
 
       case 'delete_reminder':
-        return executeDeleteReminder(args.reminder_id);
+        return executeDeleteReminder(args.reminder_id, user);
 
       case 'confirm_reminder_done':
-        return executeConfirmReminderDone(args.reminder_id);
+        return executeConfirmReminderDone(args.reminder_id, user);
 
       case 'query_procedures':
         return executeQueryProcedures(args.date_from, args.date_to, args.category);
@@ -593,7 +594,33 @@ async function executeGetFinancialSummary(dateFrom: string, dateTo: string): Pro
   return JSON.stringify(raw || { error: 'Sem dados financeiros para o período' });
 }
 
-async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean): Promise<string> {
+async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean, user?: UserConfig | null): Promise<string> {
+  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+
+  if (useCalendar) {
+    // Arthur → Google Calendar
+    const event = await gcal.createEvent({
+      title,
+      datetime,
+      recurring: recurring || false,
+    });
+
+    if (event) {
+      const remindDate = new Date(datetime);
+      return JSON.stringify({
+        sucesso: true,
+        id: event.id,
+        titulo: title,
+        horario: remindDate.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+        via: 'Google Calendar',
+        recorrente: recurring || false,
+      });
+    }
+
+    return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o evento no Google Calendar' });
+  }
+
+  // Outros → Supabase
   const result = await db.createReminder(title, datetime, phone, recurring);
 
   if (result) {
@@ -611,7 +638,18 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
   return JSON.stringify({ sucesso: false, error: 'Não foi possível criar o lembrete' });
 }
 
-async function executeConfirmReminderDone(reminderId: string): Promise<string> {
+async function executeConfirmReminderDone(reminderId: string, user?: UserConfig | null): Promise<string> {
+  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+
+  if (useCalendar) {
+    const success = await gcal.deleteEvent(reminderId);
+    return JSON.stringify({
+      sucesso: success,
+      id: reminderId,
+      mensagem: success ? 'Lembrete confirmado como feito e removido do Google Calendar!' : 'Não encontrei esse evento no Google Calendar.',
+    });
+  }
+
   const success = await db.confirmReminderDone(reminderId);
   return JSON.stringify({
     sucesso: success,
@@ -620,7 +658,26 @@ async function executeConfirmReminderDone(reminderId: string): Promise<string> {
   });
 }
 
-async function executeListReminders(): Promise<string> {
+async function executeListReminders(user?: UserConfig | null): Promise<string> {
+  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+
+  if (useCalendar) {
+    const events = await gcal.listUpcomingEvents(30);
+
+    const list = events.map((e) => ({
+      id: e.id,
+      titulo: e.title,
+      horario: e.datetime ? new Date(e.datetime).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'N/A',
+      recorrente: e.recurring,
+      via: 'Google Calendar',
+    }));
+
+    return JSON.stringify({
+      total: list.length,
+      lembretes: list,
+    });
+  }
+
   const reminders = await db.listPendingReminders();
 
   const list = reminders.map((r) => ({
@@ -636,7 +693,18 @@ async function executeListReminders(): Promise<string> {
   });
 }
 
-async function executeDeleteReminder(reminderId: string): Promise<string> {
+async function executeDeleteReminder(reminderId: string, user?: UserConfig | null): Promise<string> {
+  const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+
+  if (useCalendar) {
+    const success = await gcal.deleteEvent(reminderId);
+    return JSON.stringify({
+      sucesso: success,
+      id: reminderId,
+      mensagem: success ? 'Lembrete removido do Google Calendar' : 'Não encontrei esse evento no Google Calendar',
+    });
+  }
+
   const success = await db.cancelReminder(reminderId);
   return JSON.stringify({
     sucesso: success,

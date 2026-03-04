@@ -159,7 +159,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     const userConfig = getUserByPhone(senderPhone);
 
     const messages: ChatMessage[] = [
-      { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role) },
+      { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role, userConfig?.features) },
       { role: 'system', content: dynamicContext },
       ...contextMessages,
     ];
