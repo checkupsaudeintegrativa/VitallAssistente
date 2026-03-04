@@ -327,11 +327,66 @@ function getBrtNow(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
 }
 
-/** Retorna toolDefinitions filtradas pelo papel do usuário */
+/** Retorna toolDefinitions filtradas pelo papel e features do usuário */
 export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
-  if (!user || user.role === 'admin') return toolDefinitions;
-  // staff: remove ferramentas financeiras
-  return toolDefinitions.filter((t) => !FINANCIAL_TOOLS.has(t.function.name));
+  let tools = user && user.role !== 'admin'
+    ? toolDefinitions.filter((t) => !FINANCIAL_TOOLS.has(t.function.name))
+    : [...toolDefinitions];
+
+  // Se o usuário tem Google Calendar, adapta as tools de lembrete
+  if (user?.features?.googleCalendar && gcal.isAvailable()) {
+    tools = tools.map((t) => {
+      if (t.function.name === 'create_reminder') {
+        return {
+          ...t,
+          function: {
+            ...t.function,
+            description: 'Cria um lembrete no Google Calendar do usuário. O evento aparece no calendário com notificação automática. NÃO precisa do parâmetro phone — vai direto pro calendário. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT). Se a pessoa não especificar que é único, crie como recorrente (recurring=true).',
+            parameters: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'Descrição do lembrete. Ex: "Ligar para paciente Maria"' },
+                datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
+                phone: { type: 'string', description: 'Opcional — ignorado para Google Calendar.' },
+                recurring: { type: 'boolean', description: 'true = evento recorrente diário até confirmar. false = evento único. Default: true para tarefas, false para horários fixos.' },
+              },
+              required: ['title', 'datetime'],
+            },
+          },
+        };
+      }
+      if (t.function.name === 'list_reminders') {
+        return {
+          ...t,
+          function: {
+            ...t.function,
+            description: 'Lista todos os lembretes/eventos pendentes no Google Calendar.',
+          },
+        };
+      }
+      if (t.function.name === 'delete_reminder') {
+        return {
+          ...t,
+          function: {
+            ...t.function,
+            description: 'Remove um lembrete/evento do Google Calendar pelo ID.',
+          },
+        };
+      }
+      if (t.function.name === 'confirm_reminder_done') {
+        return {
+          ...t,
+          function: {
+            ...t.function,
+            description: 'Confirma que a tarefa foi feita — remove o evento do Google Calendar.',
+          },
+        };
+      }
+      return t;
+    });
+  }
+
+  return tools;
 }
 
 /** Executa uma ferramenta pelo nome e argumentos, retorna string JSON com resultado */
@@ -596,6 +651,7 @@ async function executeGetFinancialSummary(dateFrom: string, dateTo: string): Pro
 
 async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean, user?: UserConfig | null): Promise<string> {
   const useCalendar = user?.features?.googleCalendar && gcal.isAvailable();
+  console.log(`[Reminder] user=${user?.name || 'null'}, googleCalendar=${user?.features?.googleCalendar}, gcalAvailable=${gcal.isAvailable()}, useCalendar=${useCalendar}`);
 
   if (useCalendar) {
     // Arthur → Google Calendar

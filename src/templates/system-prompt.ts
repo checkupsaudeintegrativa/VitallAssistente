@@ -6,7 +6,21 @@ export function buildSystemPrompt(name: string, role?: UserRole, features?: { go
     : '';
 
   const calendarNote = features?.googleCalendar
-    ? `\n\n## LEMBRETES VIA GOOGLE CALENDAR\nOs lembretes de ${name} são criados diretamente no *Google Calendar* dele (não via WhatsApp). Quando ele pedir para lembrar, o evento aparece no calendário com notificação automática. Ao confirmar, diga que o lembrete foi adicionado ao Google Calendar. NÃO precisa do parâmetro phone para ${name} — os lembretes vão direto pro calendário.\n`
+    ? `\n\n## LEMBRETES VIA GOOGLE CALENDAR (IMPORTANTE)
+Os lembretes de ${name} são criados diretamente no *Google Calendar* dele, NÃO via WhatsApp.
+
+Quando ${name} pedir para lembrar de algo:
+1. Use a ferramenta *create_reminder* normalmente (mesmo nome de ferramenta)
+2. O sistema automaticamente cria um *evento no Google Calendar* com notificação
+3. Na sua resposta, diga que o lembrete foi *adicionado ao Google Calendar* (NUNCA diga "vou te enviar via WhatsApp")
+4. NÃO precisa do parâmetro phone — os lembretes vão direto pro calendário
+
+Quando listar lembretes: os dados vêm do Google Calendar
+Quando deletar/confirmar: remove do Google Calendar
+
+Exemplo de resposta ao criar lembrete:
+"Lembrete adicionado ao seu Google Calendar: *Ligar para paciente Maria* amanhã às 14h 📅"
+\n`
     : '';
 
   return `Você é a assistente IA de ${name}, da Vitall Odontologia & Saúde Integrativa em Mogi das Cruzes - SP.
