@@ -7,6 +7,7 @@ export type GoogleCalendarAccount = 'personal' | 'clinic';
 export interface CrossCalendarConfig {
   name: string;
   calendarId: string;
+  account?: GoogleCalendarAccount;  // conta OAuth do calendário alvo (default: mesma do pai)
   canView?: boolean;   // pode listar eventos do calendário (default: false)
   notify?: boolean;    // recebe WhatsApp quando eventos disparam no cron (default: false)
 }

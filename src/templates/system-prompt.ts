@@ -9,34 +9,30 @@ export function buildSystemPrompt(name: string, role?: UserRole, features?: { go
 
   let calendarNote = '';
   if (calConfig) {
-    calendarNote = `\n\n## LEMBRETES VIA GOOGLE CALENDAR (IMPORTANTE)
-Os lembretes de ${name} são criados diretamente no *Google Calendar*, NÃO via WhatsApp.
-
+    calendarNote = `\n\n## LEMBRETES (IMPORTANTE)
 Quando ${name} pedir para lembrar de algo:
-1. Use a ferramenta *create_reminder* normalmente (mesmo nome de ferramenta)
-2. O sistema automaticamente cria um *evento no Google Calendar* com notificação
-3. Na sua resposta, diga que o lembrete foi *adicionado ao Google Calendar* (NUNCA diga "vou te enviar via WhatsApp")
-4. NÃO precisa do parâmetro phone — os lembretes vão direto pro calendário
-
-Quando listar lembretes: os dados vêm do Google Calendar
-Quando deletar/confirmar: remove do Google Calendar
+1. Use a ferramenta *create_reminder* (NÃO precisa do parâmetro phone)
+2. Na sua resposta, diga apenas que o lembrete foi criado — NUNCA mencione Google Calendar, calendário, ou qualquer sistema interno
+3. SEMPRE use o campo *agora_iso* do get_current_datetime como base para calcular horários. O offset *-03:00* é obrigatório no datetime
 
 Exemplo de resposta ao criar lembrete:
-"Lembrete adicionado ao seu Google Calendar: *Ligar para paciente Maria* amanhã às 14h 📅"
+"Lembrete criado: *Ligar para paciente Maria* amanhã às 14h ✅"
 `;
 
     if (calConfig.crossCalendars && calConfig.crossCalendars.length > 0) {
-      const names = calConfig.crossCalendars.map((c) => c.name).join(', ');
+      const createNames = calConfig.crossCalendars.map((c) => c.name).join(', ');
+      const viewNames = calConfig.crossCalendars.filter((c) => c.canView).map((c) => c.name).join(', ');
+
       calendarNote += `
-### Acesso a calendários de outras pessoas
-${name} também pode gerenciar lembretes de: *${names}*.
+### Lembretes para outras pessoas
+${name} pode criar lembretes para: *${createNames}*.
+${viewNames ? `${name} pode ver os lembretes de: *${viewNames}*.` : ''}
 
 Quando ${name} mencionar uma dessas pessoas em contexto de lembrete, use o parâmetro *target_calendar* com o nome da pessoa:
+- "lembra a Jéssica de..." → create_reminder com target_calendar="Jéssica"
 - "lembretes da Jéssica" → list_reminders com target_calendar="Jéssica"
-- "cria lembrete pra Jéssica" → create_reminder com target_calendar="Jéssica"
-- "cancela o lembrete X da Jéssica" → delete_reminder com target_calendar="Jéssica"
 
-Se ${name} não mencionar ninguém, os lembretes são do próprio calendário de ${name}.
+Se ${name} não mencionar ninguém, os lembretes são do próprio ${name}.
 `;
     }
 
@@ -244,8 +240,8 @@ Exemplos de perguntas que ativam essa ferramenta:
   - Para calcular, consulte get_current_datetime primeiro
 
 ### Recorrente vs único
-- *recurring=true* (padrão para tarefas): "me lembra de ligar pro paciente", "lembra de pegar o documento", "me cobra sobre o orçamento" → lembra todo dia até confirmar
-- *recurring=false* (para horários/eventos): "me avisa às 14h que tem reunião", "lembrete amanhã 8h" → lembra uma vez só
+- *recurring=true* (PADRÃO — use sempre, exceto se pedir "só uma vez"): envia no horário + digest 7h30/17h todo dia até confirmar feito
+- *recurring=false* (só se pedir explicitamente "uma vez só" ou "não precisa lembrar de novo"): envia no horário e pronto
 
 ### Múltiplos lembretes de um áudio/mensagem
 - Se a pessoa mandar UM áudio ou UMA mensagem pedindo VÁRIOS lembretes, crie TODOS de uma vez

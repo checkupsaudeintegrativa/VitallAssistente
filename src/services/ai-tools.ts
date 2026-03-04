@@ -519,14 +519,18 @@ export async function executeTool(name: string, args: Record<string, any>, user?
 // ── Individual executors ──
 
 function executeGetCurrentDatetime(): string {
-  const now = getBrtNow();
+  const now = new Date();
+  const brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const date = `${brt.getUTCFullYear()}-${pad(brt.getUTCMonth() + 1)}-${pad(brt.getUTCDate())}`;
+  const time = `${pad(brt.getUTCHours())}:${pad(brt.getUTCMinutes())}`;
   const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
   return JSON.stringify({
-    date: now.toISOString().split('T')[0],
-    time: now.toTimeString().substring(0, 5),
-    weekday: weekdays[now.getDay()],
-    full: now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),
+    agora_iso: `${date}T${time}:00-03:00`,
+    date,
+    time,
+    weekday: weekdays[brt.getUTCDay()],
   });
 }
 
