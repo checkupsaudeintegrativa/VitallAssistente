@@ -121,14 +121,14 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'create_reminder',
-      description: 'Cria um lembrete. O lembrete será enviado via WhatsApp no horário especificado para o telefone de quem pediu. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT — se passar, use 17h30 BRT do mesmo dia ou 7h30 BRT do dia seguinte). Se a pessoa não especificar que é único, crie como recorrente (recurring=true) — o sistema vai lembrar todo dia às 7h30 BRT até ela confirmar que fez.',
+      description: 'Cria um lembrete. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT — se passar, use 17h30 BRT do mesmo dia ou 7h30 BRT do dia seguinte). SEMPRE use recurring:true por padrão (envia no horário + digest 7h30/17h todo dia até confirmar feito). Só use recurring:false se a pessoa disser explicitamente "só uma vez" ou "não precisa lembrar de novo".',
       parameters: {
         type: 'object',
         properties: {
           title: { type: 'string', description: 'Descrição do lembrete. Ex: "Ligar para paciente Maria"' },
           datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
           phone: { type: 'string', description: 'Telefone de quem pediu (do contexto [Contexto]). Ex: "5511943635555"' },
-          recurring: { type: 'boolean', description: 'true = lembra todo dia até confirmar. false = lembra uma vez só. Default: true para tarefas ("me lembra de..."), false para horários fixos ("me avisa às 14h").' },
+          recurring: { type: 'boolean', description: 'SEMPRE true por padrão. Só use false se a pessoa pedir explicitamente "só uma vez" ou "não precisa lembrar de novo".' },
         },
         required: ['title', 'datetime', 'phone'],
       },
@@ -374,14 +374,14 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
           ...t,
           function: {
             ...t.function,
-            description: 'Cria um lembrete. NÃO precisa do parâmetro phone. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT). Se a pessoa não especificar que é único, crie como recorrente (recurring=true).',
+            description: 'Cria um lembrete. NÃO precisa do parâmetro phone. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT). SEMPRE use recurring:true por padrão (envia no horário + digest 7h30/17h todo dia até confirmar feito). Só use recurring:false se a pessoa disser explicitamente "só uma vez" ou "não precisa lembrar de novo".',
             parameters: {
               type: 'object',
               properties: {
                 title: { type: 'string', description: 'Descrição do lembrete. Ex: "Ligar para paciente Maria"' },
                 datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
                 phone: { type: 'string', description: 'Opcional — ignorado.' },
-                recurring: { type: 'boolean', description: 'true = lembra todo dia até confirmar. false = lembra uma vez só. Default: true para tarefas, false para horários fixos.' },
+                recurring: { type: 'boolean', description: 'SEMPRE true por padrão. Só use false se a pessoa pedir explicitamente "só uma vez" ou "não precisa lembrar de novo".' },
                 ...createTargetParam,
               },
               required: ['title', 'datetime'],
