@@ -8,7 +8,17 @@ import { ptBR } from 'date-fns/locale';
 const TZ = 'America/Sao_Paulo';
 
 // Client separado — banco do Controle de Ponto (funcionarios, registros_ponto)
-const supabasePonto = createClient(env.SUPABASE_PONTO_URL, env.SUPABASE_PONTO_KEY);
+// Lazy init para não crashar se as variáveis não estiverem configuradas
+let _supabasePonto: ReturnType<typeof createClient> | null = null;
+function getSupabasePonto() {
+  if (!_supabasePonto) {
+    if (!env.SUPABASE_PONTO_URL || !env.SUPABASE_PONTO_KEY) {
+      throw new Error('SUPABASE_PONTO_URL e SUPABASE_PONTO_KEY não configuradas');
+    }
+    _supabasePonto = createClient(env.SUPABASE_PONTO_URL, env.SUPABASE_PONTO_KEY);
+  }
+  return _supabasePonto;
+}
 
 // ── Types ──
 
@@ -92,7 +102,7 @@ function horasEsperadasDia(dow: number): number {
 // ── Data fetching ──
 
 async function fetchFuncionarios(): Promise<Funcionario[]> {
-  const { data, error } = await supabasePonto
+  const { data, error } = await getSupabasePonto()
     .from('funcionarios')
     .select('id, nome, carga_horaria_diaria_minutos, horarios')
     .order('nome');
@@ -104,7 +114,7 @@ async function fetchFuncionarios(): Promise<Funcionario[]> {
 }
 
 async function fetchRegistros(startISO: string, endISO: string): Promise<RegistroPonto[]> {
-  const { data, error } = await supabasePonto
+  const { data, error } = await getSupabasePonto()
     .from('registros_ponto')
     .select('id, funcionario_id, nome_funcionario, data_hora, tipo')
     .gte('data_hora', startISO)
@@ -497,7 +507,7 @@ export async function findFuncionarioByName(name: string): Promise<Funcionario |
 export async function getRegistrosByDate(funcionarioId: string, date: string): Promise<RegistroPonto[]> {
   const startISO = `${date}T00:00:00-03:00`;
   const endISO = `${date}T23:59:59-03:00`;
-  const { data, error } = await supabasePonto
+  const { data, error } = await getSupabasePonto()
     .from('registros_ponto')
     .select('id, funcionario_id, nome_funcionario, data_hora, tipo')
     .eq('funcionario_id', funcionarioId)
@@ -518,9 +528,9 @@ export async function addRegistroPonto(
   dataHora: string,
   tipo: string,
 ): Promise<{ id: string } | null> {
-  const { data, error } = await supabasePonto
+  const { data, error } = await getSupabasePonto()
     .from('registros_ponto')
-    .insert({ funcionario_id: funcionarioId, nome_funcionario: nomeFuncionario, data_hora: dataHora, tipo })
+    .insert({ funcionario_id: funcionarioId, nome_funcionario: nomeFuncionario, data_hora: dataHora, tipo } as any)
     .select('id')
     .single();
   if (error) {
@@ -532,7 +542,7 @@ export async function addRegistroPonto(
 
 /** Remove um registro de ponto pelo ID */
 export async function deleteRegistroPonto(recordId: string): Promise<boolean> {
-  const { error } = await supabasePonto
+  const { error } = await getSupabasePonto()
     .from('registros_ponto')
     .delete()
     .eq('id', recordId);
