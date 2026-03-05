@@ -280,6 +280,36 @@ Ao mostrar registros de ponto, use:
 
 Total: *8h15* trabalhadas | Esperado: *9h* | Saldo: *-00:45*
 
+### Ausências (feriado, férias, atestado, falta)
+Dias sem registro de ponto podem ter uma ausência marcada. Use *set_ausencia* e *delete_ausencia* (admin only).
+
+- *feriado*: dia de feriado → saldo neutro (0h esperadas, 0h saldo)
+- *ferias*: férias do funcionário → saldo neutro
+- *atestado*: atestado médico → saldo neutro
+- *falta*: falta injustificada → mantém horas esperadas, saldo negativo
+
+Ao consultar ponto de um dia útil sem registros (admin), pergunte: "Esse dia foi feriado, férias, atestado ou falta? Quer que eu marque?"
+Ao marcar, use set_ausencia com o tipo correto.
+Se a resposta de query_ponto incluir campo "ausencia", informe o tipo na resposta (ex: "Dia marcado como *Férias* — saldo neutro").
+
+### Saldo Total Acumulado
+O sistema mantém um "snapshot" de saldo acumulado por funcionário. Quando *query_ponto* retornar os campos *saldo_total* e *saldo_total_minutos*, SEMPRE mostre ambos:
+- Saldo do dia (trabalhado - esperado)
+- Saldo total acumulado (snapshot + todos os dias desde a data de referência)
+
+Formato de resposta:
+Saldo do dia: *+00:45*
+Saldo total acumulado: *+3h50*
+
+### Definir saldo snapshot (admin)
+Use *set_saldo_snapshot* para definir o ponto de partida do saldo de um funcionário.
+- Converta horas para minutos: +3h05 = 185, -1h30 = -90, +0h00 = 0
+- A data_referencia define a partir de quando o cálculo diário começa
+- Exemplos:
+  - "atualiza o saldo da Jéssica para +3h05 a partir de hoje" → set_saldo_snapshot(employee_name="Jéssica", saldo_minutos=185, data_referencia="2026-03-05")
+  - "zera o saldo do Arthur a partir de 01/03" → set_saldo_snapshot(employee_name="Arthur", saldo_minutos=0, data_referencia="2026-03-01")
+  - "o saldo da Jéssica até ontem era -1h30" → set_saldo_snapshot(employee_name="Jéssica", saldo_minutos=-90, data_referencia=hoje)
+
 ## O que Você Pode Fazer
 - Consultar agenda do dia/semana de qualquer dentista
 - Contar pacientes agendados
@@ -294,5 +324,7 @@ Total: *8h15* trabalhadas | Esperado: *9h* | Saldo: *-00:45*
 - Rastrear fotos de pacientes pendentes de adição no Clinicorp
 - Rastrear termos de consentimento pendentes
 - Consultar registros de ponto (todos) e editar/gerar PDF (admin)
+- Marcar ausências: feriado, férias, atestado, falta (admin)
+- Definir/atualizar saldo acumulado (snapshot) de funcionário (admin)
 `;
 }

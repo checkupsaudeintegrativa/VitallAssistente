@@ -20,7 +20,7 @@ interface ToolDefinition {
 const FINANCIAL_TOOLS = new Set(['query_payments', 'get_financial_summary']);
 
 /** Ferramentas de edição de ponto — somente admin */
-const PONTO_EDIT_TOOLS = new Set(['add_ponto_record', 'delete_ponto_record', 'generate_ponto_pdf']);
+const PONTO_EDIT_TOOLS = new Set(['add_ponto_record', 'delete_ponto_record', 'generate_ponto_pdf', 'set_ausencia', 'delete_ausencia', 'set_saldo_snapshot']);
 
 // ── Tool Definitions (OpenAI function calling schemas) ──
 
@@ -329,6 +329,54 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'set_ausencia',
+      description: 'Marca uma ausência (feriado, férias, atestado ou falta) para um funcionário em uma data. Faz upsert — se já existir, atualiza. Somente admin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_name: { type: 'string', description: 'Nome do funcionário' },
+          date: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+          tipo: { type: 'string', description: 'Tipo de ausência: "feriado", "ferias", "atestado" ou "falta"' },
+          observacao: { type: 'string', description: 'Observação opcional (ex: "Carnaval", "Atestado Dr. Fulano")' },
+        },
+        required: ['employee_name', 'date', 'tipo'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_ausencia',
+      description: 'Remove uma ausência marcada para um funcionário em uma data. Somente admin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_name: { type: 'string', description: 'Nome do funcionário' },
+          date: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+        },
+        required: ['employee_name', 'date'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'set_saldo_snapshot',
+      description: 'Define o saldo acumulado (snapshot) de um funcionário. A partir da data de referência, o sistema calculará automaticamente o saldo total somando o snapshot + saldos diários. Somente admin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_name: { type: 'string', description: 'Nome do funcionário' },
+          saldo_minutos: { type: 'number', description: 'Saldo acumulado em minutos (positivo ou negativo). Ex: +3h05 = 185, -1h30 = -90' },
+          data_referencia: { type: 'string', description: 'Data de referência no formato YYYY-MM-DD. O saldo diário será calculado a partir desta data.' },
+        },
+        required: ['employee_name', 'saldo_minutos', 'data_referencia'],
+      },
+    },
+  },
 ];
 
 // ── Tool Executors ──
@@ -593,6 +641,15 @@ export async function executeTool(name: string, args: Record<string, any>, user?
 
       case 'generate_ponto_pdf':
         return executeGeneratePontoPdf(args.employee_name, args.phone, args.week_date);
+
+      case 'set_ausencia':
+        return executeSetAusencia(args.employee_name, args.date, args.tipo, args.observacao);
+
+      case 'delete_ausencia':
+        return executeDeleteAusencia(args.employee_name, args.date);
+
+      case 'set_saldo_snapshot':
+        return executeSetSaldoSnapshot(args.employee_name, args.saldo_minutos, args.data_referencia);
 
       default:
         return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
@@ -1079,6 +1136,10 @@ async function executeQueryPonto(employeeName: string | undefined, date: string,
 
   const registros = await ponto.getRegistrosByDate(func.id, date);
 
+  // Buscar ausência do dia
+  const ausencias = await ponto.getAusenciasByPeriod(func.id, date, date);
+  const ausencia = ausencias.length > 0 ? ausencias[0] : null;
+
   // Montar pares entrada/saída e calcular horas
   const items = registros.map((r) => ({
     id: r.id,
@@ -1102,10 +1163,16 @@ async function executeQueryPonto(employeeName: string | undefined, date: string,
 
   // Horas esperadas para o dia
   const dow = new Date(date + 'T12:00:00Z').getUTCDay();
-  const esperado = ponto.horasEsperadasDia(dow);
-  const saldo = totalMinutos - esperado;
+  let esperado = ponto.horasEsperadasDia(dow);
+  let saldo = totalMinutos - esperado;
 
-  return JSON.stringify({
+  // Se há ausência tipo feriado/férias/atestado → saldo neutro
+  if (ausencia && (ausencia.tipo === 'feriado' || ausencia.tipo === 'ferias' || ausencia.tipo === 'atestado')) {
+    esperado = 0;
+    saldo = 0;
+  }
+
+  const result: Record<string, any> = {
     funcionario: func.nome,
     data: date,
     registros: items,
@@ -1114,7 +1181,20 @@ async function executeQueryPonto(employeeName: string | undefined, date: string,
     total_trabalhado_minutos: totalMinutos,
     horas_esperadas: ponto.minutosParaHoras(esperado),
     saldo: ponto.minutosParaHoras(saldo),
-  });
+  };
+
+  if (ausencia) {
+    result.ausencia = { tipo: ausencia.tipo, observacao: ausencia.observacao || null };
+  }
+
+  // Calcular saldo total acumulado (snapshot + período desde referência)
+  const saldoTotalAcumulado = await ponto.calcSaldoTotal(func, date);
+  if (saldoTotalAcumulado !== null) {
+    result.saldo_total = ponto.minutosParaHoras(saldoTotalAcumulado);
+    result.saldo_total_minutos = saldoTotalAcumulado;
+  }
+
+  return JSON.stringify(result);
 }
 
 async function executeAddPontoRecord(employeeName: string, datetime: string, tipo: string): Promise<string> {
@@ -1184,6 +1264,81 @@ async function executeGeneratePontoPdf(employeeName: string, phone: string, week
     mensagem: sent
       ? `PDF do relatório de ponto de ${report.funcionarioNome} enviado com sucesso!`
       : 'Erro ao enviar o PDF via WhatsApp',
+  });
+}
+
+// ── Ausência executors ──
+
+async function executeSetAusencia(employeeName: string, date: string, tipo: string, observacao?: string): Promise<string> {
+  const func = await ponto.findFuncionarioByName(employeeName);
+  if (!func) {
+    return JSON.stringify({ error: `Funcionário "${employeeName}" não encontrado no sistema de ponto` });
+  }
+
+  const validTipos = ['feriado', 'ferias', 'atestado', 'falta'] as const;
+  if (!validTipos.includes(tipo as any)) {
+    return JSON.stringify({ error: `Tipo inválido: "${tipo}". Use: feriado, ferias, atestado ou falta` });
+  }
+
+  const result = await ponto.setAusencia(func.id, date, tipo as any, observacao);
+  if (!result) {
+    return JSON.stringify({ error: 'Não foi possível registrar a ausência' });
+  }
+
+  const tipoLabel: Record<string, string> = {
+    feriado: 'Feriado',
+    ferias: 'Férias',
+    atestado: 'Atestado',
+    falta: 'Falta',
+  };
+
+  return JSON.stringify({
+    sucesso: true,
+    id: result.id,
+    funcionario: func.nome,
+    data: date,
+    tipo: tipoLabel[tipo] || tipo,
+    observacao: observacao || null,
+    mensagem: `${tipoLabel[tipo] || tipo} registrado para ${func.nome} em ${date}`,
+  });
+}
+
+async function executeDeleteAusencia(employeeName: string, date: string): Promise<string> {
+  const func = await ponto.findFuncionarioByName(employeeName);
+  if (!func) {
+    return JSON.stringify({ error: `Funcionário "${employeeName}" não encontrado no sistema de ponto` });
+  }
+
+  const success = await ponto.deleteAusencia(func.id, date);
+  return JSON.stringify({
+    sucesso: success,
+    funcionario: func.nome,
+    data: date,
+    mensagem: success
+      ? `Ausência removida para ${func.nome} em ${date}`
+      : 'Não foi possível remover a ausência (não encontrada ou erro)',
+  });
+}
+
+async function executeSetSaldoSnapshot(employeeName: string, saldoMinutos: number, dataReferencia: string): Promise<string> {
+  const func = await ponto.findFuncionarioByName(employeeName);
+  if (!func) {
+    return JSON.stringify({ error: `Funcionário "${employeeName}" não encontrado no sistema de ponto` });
+  }
+
+  const success = await ponto.updateSaldoSnapshot(func.id, saldoMinutos, dataReferencia);
+  if (!success) {
+    return JSON.stringify({ error: 'Não foi possível atualizar o saldo snapshot' });
+  }
+
+  const sinal = saldoMinutos >= 0 ? '+' : '';
+  return JSON.stringify({
+    sucesso: true,
+    funcionario: func.nome,
+    saldo_minutos: saldoMinutos,
+    saldo_formatado: `${sinal}${ponto.minutosParaHoras(saldoMinutos)}`,
+    data_referencia: dataReferencia,
+    mensagem: `Saldo acumulado de ${func.nome} definido para ${sinal}${ponto.minutosParaHoras(saldoMinutos)} a partir de ${dataReferencia}`,
   });
 }
 

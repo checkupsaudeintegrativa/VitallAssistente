@@ -27,6 +27,8 @@ interface Funcionario {
   nome: string;
   carga_horaria_diaria_minutos: number;
   horarios?: Record<string, { ativo: boolean }>;
+  saldo_acumulado_minutos?: number;
+  saldo_data_referencia?: string | null;
 }
 
 interface RegistroPonto {
@@ -59,6 +61,7 @@ interface EmployeeReport {
   totalTrabalhado: number;
   totalEsperado: number;
   totalSaldo: number;
+  saldoAcumuladoTotal?: number;
 }
 
 // ── Helpers ──
@@ -104,7 +107,7 @@ function horasEsperadasDia(dow: number): number {
 async function fetchFuncionarios(): Promise<Funcionario[]> {
   const { data, error } = await getSupabasePonto()
     .from('funcionarios')
-    .select('id, nome, carga_horaria_diaria_minutos, horarios')
+    .select('id, nome, carga_horaria_diaria_minutos, horarios, saldo_acumulado_minutos, saldo_data_referencia')
     .order('nome');
   if (error) {
     console.error('[PontoReport] Erro ao buscar funcionários:', error.message);
@@ -422,6 +425,33 @@ function generateEmployeePDF(report: EmployeeReport, start: Date, end: Date): Pr
 
     y += fH;
 
+    // ────────── SALDO TOTAL ACUMULADO (se disponível) ──────────
+    if (report.saldoAcumuladoTotal !== undefined) {
+      const stH = 26;
+      if (y + stH > doc.page.height - 130) {
+        doc.addPage();
+        y = M;
+      }
+
+      // Fundo cinza claro
+      doc.rect(TX, y, TW, stH).fill('#f3f4f6');
+      doc.lineWidth(1).strokeColor(C.grayBorder);
+      doc.rect(TX, y, TW, stH).stroke();
+
+      // Label
+      doc.fontSize(10).font('Helvetica-Bold').fillColor(C.black);
+      doc.text('Saldo Total Acumulado', TX + 8, y + 7, { width: labelW - 16, lineBreak: false });
+
+      // Valor colorido
+      const stVal = report.saldoAcumuladoTotal;
+      const stTxt = `${stVal >= 0 ? '+' : ''}${minutosParaHoras(stVal)}`;
+      const stColor = stVal >= 0 ? C.greenText : C.redText;
+      doc.fontSize(11).font('Helvetica-Bold').fillColor(stColor);
+      doc.text(stTxt, TX + labelW, y + 6, { width: tealW, align: 'center', lineBreak: false });
+
+      y += stH;
+    }
+
     // ────────── ASSINATURAS ──────────
     y += 45;
     if (y > doc.page.height - 80) {
@@ -483,6 +513,91 @@ function drawBadge(
   doc.fontSize(8).font('Helvetica-Bold').fillColor(textColor);
   doc.text(text, bx, badgeY + 3.5, { width: bw, align: 'center', lineBreak: false });
   doc.restore();
+}
+
+// ── Saldo Total Acumulado ──
+
+/** Calcula saldo total acumulado: snapshot + soma dos saldos diários desde data_referencia até upToDateISO */
+async function calcSaldoTotal(func: Funcionario, upToDateISO: string): Promise<number | null> {
+  if (!func.saldo_data_referencia) return null;
+
+  const snapshot = func.saldo_acumulado_minutos || 0;
+  const refDate = func.saldo_data_referencia; // YYYY-MM-DD
+
+  // Buscar registros do período
+  const registros = await fetchRegistros(
+    `${refDate}T00:00:00-03:00`,
+    `${upToDateISO}T23:59:59-03:00`,
+  );
+  const funcRegs = registros.filter((r) => r.funcionario_id === func.id);
+
+  // Agrupar registros por data BRT
+  const byDate = new Map<string, RegistroPonto[]>();
+  for (const r of funcRegs) {
+    const d = parseISO(r.data_hora);
+    if (isNaN(d.getTime())) continue;
+    const key = formatInTimeZone(d, TZ, 'yyyy-MM-dd');
+    if (!byDate.has(key)) byDate.set(key, []);
+    byDate.get(key)!.push(r);
+  }
+
+  // Buscar ausências do período
+  const ausencias = await getAusenciasByPeriod(func.id, refDate, upToDateISO);
+  const ausenciaMap = new Map<string, Ausencia>();
+  for (const a of ausencias) {
+    ausenciaMap.set(a.data, a);
+  }
+
+  // Iterar dia a dia
+  let totalSaldo = 0;
+  const cursor = new Date(refDate + 'T12:00:00Z');
+  const endDate = new Date(upToDateISO + 'T12:00:00Z');
+
+  while (cursor <= endDate) {
+    const iso = isoDate(cursor);
+    const dow = cursor.getUTCDay();
+    let esperado = horasEsperadasDia(dow);
+
+    const ausencia = ausenciaMap.get(iso);
+    if (ausencia && (ausencia.tipo === 'feriado' || ausencia.tipo === 'ferias' || ausencia.tipo === 'atestado')) {
+      esperado = 0;
+    }
+
+    // Calcular trabalhado
+    const recs = byDate.get(iso) || [];
+    recs.sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime());
+    let trabalhado = 0;
+    for (let i = 0; i < recs.length; i += 2) {
+      const ent = recs[i];
+      const sai = i + 1 < recs.length ? recs[i + 1] : null;
+      if (ent && sai) {
+        trabalhado += Math.max(0, differenceInMinutes(parseISO(sai.data_hora), parseISO(ent.data_hora)));
+      }
+    }
+
+    totalSaldo += trabalhado - esperado;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return snapshot + totalSaldo;
+}
+
+/** Atualiza snapshot de saldo acumulado de um funcionário */
+async function updateSaldoSnapshot(
+  funcionarioId: string,
+  saldoMinutos: number,
+  dataReferencia: string,
+): Promise<boolean> {
+  const supabase: any = getSupabasePonto();
+  const { error } = await supabase
+    .from('funcionarios')
+    .update({ saldo_acumulado_minutos: saldoMinutos, saldo_data_referencia: dataReferencia })
+    .eq('id', funcionarioId);
+  if (error) {
+    console.error('[PontoReport] Erro ao atualizar saldo snapshot:', error.message);
+    return false;
+  }
+  return true;
 }
 
 // ── Public API ──
@@ -579,6 +694,11 @@ export async function generateSingleReport(funcionarioId: string, weekDate?: str
   );
 
   const report = buildEmployeeReport(func, registros, start, end);
+
+  // Calcular saldo total acumulado (snapshot + período desde referência)
+  const saldoTotal = await calcSaldoTotal(func, isoDate(end));
+  report.saldoAcumuladoTotal = saldoTotal ?? undefined;
+
   const buffer = await generateEmployeePDF(report, start, end);
 
   const parts = func.nome.trim().split(/\s+/);
@@ -588,9 +708,79 @@ export async function generateSingleReport(funcionarioId: string, weekDate?: str
   return { buffer, fileName, funcionarioNome: func.nome };
 }
 
+// ── Ausências ──
+
+export interface Ausencia {
+  id: string;
+  funcionario_id: string;
+  data: string;          // YYYY-MM-DD
+  tipo: 'feriado' | 'ferias' | 'atestado' | 'falta';
+  observacao?: string;
+  created_at?: string;
+}
+
+/** Busca ausências de um funcionário num período */
+export async function getAusenciasByPeriod(
+  funcionarioId: string,
+  startDate: string,
+  endDate: string,
+): Promise<Ausencia[]> {
+  const { data, error } = await getSupabasePonto()
+    .from('ausencias')
+    .select('*')
+    .eq('funcionario_id', funcionarioId)
+    .gte('data', startDate)
+    .lte('data', endDate)
+    .order('data', { ascending: true });
+  if (error) {
+    console.error('[PontoReport] Erro ao buscar ausências:', error.message);
+    return [];
+  }
+  return data || [];
+}
+
+/** Upsert de ausência (UNIQUE por funcionario+data) */
+export async function setAusencia(
+  funcionarioId: string,
+  data: string,
+  tipo: 'feriado' | 'ferias' | 'atestado' | 'falta',
+  observacao?: string,
+): Promise<{ id: string } | null> {
+  const { data: result, error } = await getSupabasePonto()
+    .from('ausencias')
+    .upsert(
+      { funcionario_id: funcionarioId, data, tipo, observacao: observacao || null } as any,
+      { onConflict: 'funcionario_id,data' },
+    )
+    .select('id')
+    .single();
+  if (error) {
+    console.error('[PontoReport] Erro ao inserir/atualizar ausência:', error.message);
+    return null;
+  }
+  return result;
+}
+
+/** Remove ausência de um funcionário em uma data */
+export async function deleteAusencia(
+  funcionarioId: string,
+  data: string,
+): Promise<boolean> {
+  const { error } = await getSupabasePonto()
+    .from('ausencias')
+    .delete()
+    .eq('funcionario_id', funcionarioId)
+    .eq('data', data);
+  if (error) {
+    console.error('[PontoReport] Erro ao remover ausência:', error.message);
+    return false;
+  }
+  return true;
+}
+
 // ── Helpers exportados para ai-tools ──
 
-export { fmtHour, minutosParaHoras, horasEsperadasDia };
+export { fmtHour, minutosParaHoras, horasEsperadasDia, calcSaldoTotal, updateSaldoSnapshot };
 
 export async function generatePontoReports(): Promise<PontoReportResult[]> {
   const { start, end } = calcWeekPeriod();
