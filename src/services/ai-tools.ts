@@ -1,6 +1,8 @@
 import * as clinicorp from './clinicorp';
 import * as db from './supabase';
 import * as gcal from './google-calendar';
+import * as ponto from './ponto-report';
+import * as evolution from './evolution';
 import { UserConfig, GoogleCalendarConfig } from '../config/users';
 
 // ── Types ──
@@ -16,6 +18,9 @@ interface ToolDefinition {
 
 /** Ferramentas restritas a admin (não disponíveis para staff) */
 const FINANCIAL_TOOLS = new Set(['query_payments', 'get_financial_summary']);
+
+/** Ferramentas de edição de ponto — somente admin */
+const PONTO_EDIT_TOOLS = new Set(['add_ponto_record', 'delete_ponto_record', 'generate_ponto_pdf']);
 
 // ── Tool Definitions (OpenAI function calling schemas) ──
 
@@ -262,6 +267,68 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  // ── Ponto (controle de ponto) ──
+  {
+    type: 'function',
+    function: {
+      name: 'query_ponto',
+      description: 'Consulta registros de ponto de um funcionário em uma data. Para staff, busca automaticamente pelo próprio nome. Para admin, pode consultar qualquer funcionário.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_name: { type: 'string', description: 'Nome do funcionário (opcional para admin; ignorado para staff, que consulta o próprio ponto)' },
+          date: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+        },
+        required: ['date'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'add_ponto_record',
+      description: 'Adiciona um registro de ponto para um funcionário. Somente admin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_name: { type: 'string', description: 'Nome do funcionário' },
+          datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2026-02-23T12:53:00-03:00"' },
+          tipo: { type: 'string', description: 'Tipo do registro: "entrada" ou "saida"' },
+        },
+        required: ['employee_name', 'datetime', 'tipo'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_ponto_record',
+      description: 'Remove um registro de ponto pelo ID. Use query_ponto antes para encontrar o ID do registro. Somente admin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          record_id: { type: 'string', description: 'UUID do registro de ponto a remover' },
+        },
+        required: ['record_id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'generate_ponto_pdf',
+      description: 'Gera e envia o relatório de ponto PDF de um funcionário via WhatsApp para quem pediu. Somente admin.',
+      parameters: {
+        type: 'object',
+        properties: {
+          employee_name: { type: 'string', description: 'Nome do funcionário' },
+          phone: { type: 'string', description: 'Telefone de quem pediu (do [Contexto]) — para enviar o PDF' },
+          week_date: { type: 'string', description: 'Data YYYY-MM-DD dentro da semana desejada (opcional, padrão = semana anterior)' },
+        },
+        required: ['employee_name', 'phone'],
+      },
+    },
+  },
 ];
 
 // ── Tool Executors ──
@@ -347,7 +414,7 @@ function resolveCalendarConfig(user?: UserConfig | null, targetCalendar?: string
 /** Retorna toolDefinitions filtradas pelo papel e features do usuário */
 export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
   let tools = user && user.role !== 'admin'
-    ? toolDefinitions.filter((t) => !FINANCIAL_TOOLS.has(t.function.name))
+    ? toolDefinitions.filter((t) => !FINANCIAL_TOOLS.has(t.function.name) && !PONTO_EDIT_TOOLS.has(t.function.name))
     : [...toolDefinitions];
 
   const calConfig = user?.features?.googleCalendar;
@@ -454,6 +521,14 @@ export async function executeTool(name: string, args: Record<string, any>, user?
     });
   }
 
+  // Guard: staff não pode editar registros de ponto
+  if (user && user.role !== 'admin' && PONTO_EDIT_TOOLS.has(name)) {
+    return JSON.stringify({
+      error: 'Sem permissão',
+      mensagem: `Você não tem permissão para editar registros de ponto. Fale com a Dra. Ana.`,
+    });
+  }
+
   try {
     switch (name) {
       case 'get_current_datetime':
@@ -506,6 +581,18 @@ export async function executeTool(name: string, args: Record<string, any>, user?
 
       case 'confirm_term_received':
         return executeConfirmTermReceived(args.term_id, args.patient_name, args.date);
+
+      case 'query_ponto':
+        return executeQueryPonto(args.employee_name, args.date, user);
+
+      case 'add_ponto_record':
+        return executeAddPontoRecord(args.employee_name, args.datetime, args.tipo);
+
+      case 'delete_ponto_record':
+        return executeDeletePontoRecord(args.record_id);
+
+      case 'generate_ponto_pdf':
+        return executeGeneratePontoPdf(args.employee_name, args.phone, args.week_date);
 
       default:
         return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
@@ -974,6 +1061,130 @@ async function executeCreateConsentTerm(patientName: string, procedureType: stri
   }
 
   return JSON.stringify({ sucesso: false, error: 'Não foi possível registrar o termo' });
+}
+
+// ── Ponto executors ──
+
+async function executeQueryPonto(employeeName: string | undefined, date: string, user?: UserConfig | null): Promise<string> {
+  // Staff: sempre busca pelo próprio nome
+  const searchName = (user && user.role !== 'admin') ? user.name : (employeeName || user?.name || '');
+  if (!searchName) {
+    return JSON.stringify({ error: 'Nome do funcionário não informado' });
+  }
+
+  const func = await ponto.findFuncionarioByName(searchName);
+  if (!func) {
+    return JSON.stringify({ error: `Funcionário "${searchName}" não encontrado no sistema de ponto` });
+  }
+
+  const registros = await ponto.getRegistrosByDate(func.id, date);
+
+  // Montar pares entrada/saída e calcular horas
+  const items = registros.map((r) => ({
+    id: r.id,
+    hora: ponto.fmtHour(r.data_hora),
+    tipo: r.tipo,
+    data_hora: r.data_hora,
+  }));
+
+  // Calcular total de minutos trabalhados
+  let totalMinutos = 0;
+  for (let i = 0; i < registros.length; i += 2) {
+    const ent = registros[i];
+    const sai = i + 1 < registros.length ? registros[i + 1] : null;
+    if (ent && sai) {
+      const diff = Math.max(0, Math.round(
+        (new Date(sai.data_hora).getTime() - new Date(ent.data_hora).getTime()) / 60000
+      ));
+      totalMinutos += diff;
+    }
+  }
+
+  // Horas esperadas para o dia
+  const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+  const esperado = ponto.horasEsperadasDia(dow);
+  const saldo = totalMinutos - esperado;
+
+  return JSON.stringify({
+    funcionario: func.nome,
+    data: date,
+    registros: items,
+    total_registros: items.length,
+    total_trabalhado: ponto.minutosParaHoras(totalMinutos),
+    total_trabalhado_minutos: totalMinutos,
+    horas_esperadas: ponto.minutosParaHoras(esperado),
+    saldo: ponto.minutosParaHoras(saldo),
+  });
+}
+
+async function executeAddPontoRecord(employeeName: string, datetime: string, tipo: string): Promise<string> {
+  const func = await ponto.findFuncionarioByName(employeeName);
+  if (!func) {
+    return JSON.stringify({ error: `Funcionário "${employeeName}" não encontrado no sistema de ponto` });
+  }
+
+  const result = await ponto.addRegistroPonto(func.id, func.nome, datetime, tipo);
+  if (!result) {
+    return JSON.stringify({ error: 'Não foi possível adicionar o registro de ponto' });
+  }
+
+  // Retornar registros atualizados do dia
+  const date = datetime.split('T')[0];
+  const registros = await ponto.getRegistrosByDate(func.id, date);
+  const items = registros.map((r) => ({
+    id: r.id,
+    hora: ponto.fmtHour(r.data_hora),
+    tipo: r.tipo,
+  }));
+
+  return JSON.stringify({
+    sucesso: true,
+    id: result.id,
+    funcionario: func.nome,
+    data: date,
+    tipo,
+    registros_atualizados: items,
+    mensagem: `Registro de ${tipo} adicionado para ${func.nome}`,
+  });
+}
+
+async function executeDeletePontoRecord(recordId: string): Promise<string> {
+  const success = await ponto.deleteRegistroPonto(recordId);
+  return JSON.stringify({
+    sucesso: success,
+    id: recordId,
+    mensagem: success ? 'Registro de ponto removido com sucesso' : 'Não foi possível remover o registro (não encontrado ou erro)',
+  });
+}
+
+async function executeGeneratePontoPdf(employeeName: string, phone: string, weekDate?: string): Promise<string> {
+  const func = await ponto.findFuncionarioByName(employeeName);
+  if (!func) {
+    return JSON.stringify({ error: `Funcionário "${employeeName}" não encontrado no sistema de ponto` });
+  }
+
+  const report = await ponto.generateSingleReport(func.id, weekDate);
+  if (!report) {
+    return JSON.stringify({ error: 'Não foi possível gerar o relatório de ponto' });
+  }
+
+  // Enviar PDF via WhatsApp
+  const base64 = report.buffer.toString('base64');
+  const sent = await evolution.sendMedia(
+    phone,
+    base64,
+    report.fileName,
+    `Relatório de ponto - ${report.funcionarioNome}`,
+  );
+
+  return JSON.stringify({
+    sucesso: sent,
+    funcionario: report.funcionarioNome,
+    arquivo: report.fileName,
+    mensagem: sent
+      ? `PDF do relatório de ponto de ${report.funcionarioNome} enviado com sucesso!`
+      : 'Erro ao enviar o PDF via WhatsApp',
+  });
 }
 
 async function executeConfirmTermReceived(termId?: string, patientName?: string, date?: string): Promise<string> {
