@@ -12,9 +12,10 @@ import {
   getConsentTermsForDate,
 } from '../services/supabase';
 import { listAppointments } from '../services/clinicorp';
-import { sendText } from '../services/evolution';
+import { sendText, sendMedia } from '../services/evolution';
 import { USER_BY_PHONE } from '../config/users';
 import * as gcal from '../services/google-calendar';
+import { generatePontoReports } from '../services/ponto-report';
 
 // ── Procedimentos que exigem termo de consentimento ──
 const CONSENT_KEYWORDS = [
@@ -262,6 +263,30 @@ export function startScheduler(): void {
     await sendPendingDigest();
   });
 
+  // Relatório de ponto semanal — toda segunda-feira 08:00 BRT (11:00 UTC)
+  cron.schedule('0 11 * * 1', async () => {
+    try {
+      console.log('[Cron:Ponto] Gerando relatórios de ponto semanal...');
+
+      const reports = await generatePontoReports();
+      const phones = ['5511934550921', '5511944655555']; // Jéssica, Dra. Ana
+
+      for (const report of reports) {
+        const base64 = report.buffer.toString('base64');
+        const caption = `Ponto Semanal — ${report.funcionarioNome}`;
+
+        for (const phone of phones) {
+          const ok = await sendMedia(phone, base64, report.fileName, caption);
+          console.log(`[Cron:Ponto] ${report.funcionarioNome} → ${phone}: ${ok ? 'OK' : 'FALHOU'}`);
+        }
+      }
+
+      console.log(`[Cron:Ponto] ${reports.length} relatório(s) enviado(s) com sucesso`);
+    } catch (error: any) {
+      console.error('[Cron:Ponto] Erro ao gerar/enviar relatórios:', error.message);
+    }
+  });
+
   console.log('[Cron] Scheduler de lembretes iniciado:');
   console.log('  - */5 * * * *: Lembretes pessoais (a cada 5 min)');
   console.log('  - */5 * * * *: Lembretes de foto de paciente (a cada 5 min)');
@@ -269,4 +294,5 @@ export function startScheduler(): void {
   console.log('  - */5 * * * *: Follow-up termos de consentimento (a cada 5 min)');
   console.log('  - */2 * * * *: Lembretes do Google Calendar (a cada 2 min)');
   console.log('  - 10:30/20:00 UTC (7h30/17h BRT): Digest de lembretes pendentes');
+  console.log('  - 11:00 UTC (08:00 BRT): Relatório de ponto semanal (segunda-feira)');
 }

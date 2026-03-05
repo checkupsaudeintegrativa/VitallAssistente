@@ -105,6 +105,42 @@ export async function sendTextReply(
   }
 }
 
+/** Envia documento/mídia via Evolution API (ex: PDF) */
+export async function sendMedia(
+  phone: string,
+  base64: string,
+  fileName: string,
+  caption?: string,
+  mimetype: string = 'application/pdf'
+): Promise<boolean> {
+  const number = formatPhoneBR(phone);
+  if (!number) {
+    console.error('[Evolution] Telefone inválido para sendMedia:', phone);
+    return false;
+  }
+
+  try {
+    await client.post(`/message/sendMedia/${env.EVOLUTION_INSTANCE}`, {
+      number,
+      mediatype: 'document',
+      media: base64,
+      fileName,
+      caption: caption || '',
+    });
+
+    await delay(2000);
+    return true;
+  } catch (error: any) {
+    console.error(
+      '[Evolution] Erro ao enviar mídia para',
+      number,
+      ':',
+      error?.response?.data || error.message
+    );
+    return false;
+  }
+}
+
 /** Baixa mídia (imagem/PDF/áudio) de uma mensagem como base64 */
 export async function getBase64FromMedia(
   messageId: string,

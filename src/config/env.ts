@@ -21,9 +21,13 @@ export const env = {
   EVOLUTION_API_KEY: required('EVOLUTION_API_KEY'),
   EVOLUTION_INSTANCE: required('EVOLUTION_INSTANCE'),
 
-  // Supabase (mesmo banco — tabelas chat_messages, jessica_reminders, dentist_phones)
+  // Supabase — Assistente (chat_messages, jessica_reminders, dentist_phones)
   SUPABASE_URL: required('SUPABASE_URL'),
   SUPABASE_SERVICE_KEY: required('SUPABASE_SERVICE_KEY'),
+
+  // Supabase — Controle de Ponto (funcionarios, registros_ponto)
+  SUPABASE_PONTO_URL: process.env.SUPABASE_PONTO_URL || '',
+  SUPABASE_PONTO_KEY: process.env.SUPABASE_PONTO_KEY || '',
 
   // OpenAI (GPT-4o + Whisper)
   OPENAI_API_KEY: required('OPENAI_API_KEY'),
