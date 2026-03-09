@@ -51,4 +51,7 @@ export const env = {
   // Test mode
   TEST_MODE: process.env.TEST_MODE === 'true',
   TEST_PHONE: process.env.TEST_PHONE || '',
+
+  // Multi-agent: ativar sistema de agentes (default: false → usa prompt monolítico)
+  USE_MULTI_AGENT: process.env.USE_MULTI_AGENT === 'true',
 };

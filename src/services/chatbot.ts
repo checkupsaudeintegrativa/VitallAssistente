@@ -3,6 +3,11 @@ import * as db from './supabase';
 import { chatWithTools, transcribeAudio, ChatMessage } from './openai';
 import { buildSystemPrompt } from '../templates/system-prompt';
 import { getUserByPhone } from '../config/users';
+import { getToolsByNames, adaptCalendarTools } from './ai-tools';
+import { classifyIntent, setRecentAgentId } from '../agents/router';
+import { getAgent } from '../agents/registry';
+import { buildSharedPrompt } from '../agents/shared-prompt';
+import { env } from '../config/env';
 
 /** Tipos de mídia detectáveis no payload da Evolution API */
 type MediaType = 'text' | 'image' | 'audio' | 'document';
@@ -158,27 +163,84 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     // Resolver permissões do usuário (para prompt e tools)
     const userConfig = getUserByPhone(senderPhone);
 
-    const messages: ChatMessage[] = [
-      { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role, userConfig?.features) },
-      { role: 'system', content: dynamicContext },
-      ...contextMessages,
-    ];
+    let aiResponse: string;
 
-    // Se o histórico não inclui a mensagem atual (race condition), adiciona
-    const lastHistoryMsg = history[history.length - 1];
-    if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
-      messages.push({ role: 'user', content: userContent });
+    if (env.USE_MULTI_AGENT) {
+      // ── Sistema Multi-Agente ──
+
+      // 1. Classificar intent
+      const routerResult = classifyIntent(userContent, mediaType, senderPhone);
+      const agent = getAgent(routerResult.agentId);
+
+      console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)})`);
+
+      // 2. Checar acesso no agente
+      if (agent.access.allowedRoles && !agent.access.allowedRoles.includes(userConfig?.role || 'staff')) {
+        const deniedMsg = agent.access.deniedMessage || 'Você não tem acesso a essa funcionalidade.';
+        await db.saveChatMessage(senderPhone, 'assistant', deniedMsg, 'text');
+        await evolution.sendTextReply(senderPhone, `> *Vitall:*\n\n${deniedMsg}`, messageId, remoteJid);
+        return;
+      }
+
+      // 3. Montar tools do agente (+ get_current_datetime universal)
+      let agentToolNames = [...agent.toolNames];
+      if (!agentToolNames.includes('get_current_datetime')) {
+        agentToolNames.push('get_current_datetime');
+      }
+
+      // Filtrar adminOnlyTools para staff
+      if (agent.adminOnlyTools && userConfig?.role !== 'admin') {
+        agentToolNames = agentToolNames.filter((name) => !agent.adminOnlyTools!.has(name));
+      }
+
+      let agentTools = getToolsByNames(agentToolNames);
+
+      // Adaptar tools de lembrete para Google Calendar
+      if (agent.id === 'lembretes') {
+        agentTools = adaptCalendarTools(agentTools, userConfig);
+      }
+
+      // 4. Montar prompt: shared + agent-specific
+      const sharedPrompt = buildSharedPrompt(senderName);
+      const agentPrompt = agent.buildPrompt(senderName, userConfig?.role, userConfig?.features);
+      const fullSystemPrompt = sharedPrompt + '\n\n' + agentPrompt;
+
+      const messages: ChatMessage[] = [
+        { role: 'system', content: fullSystemPrompt },
+        { role: 'system', content: dynamicContext },
+        ...contextMessages,
+      ];
+
+      const lastHistoryMsg = history[history.length - 1];
+      if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
+        messages.push({ role: 'user', content: userContent });
+      }
+
+      try { await evolution.sendPresenceComposing(remoteJid); } catch {}
+
+      aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig);
+
+      // 5. Salvar agente usado para continuidade de contexto
+      setRecentAgentId(senderPhone, routerResult.agentId);
+
+    } else {
+      // ── Fluxo legado (prompt monolítico) ──
+
+      const messages: ChatMessage[] = [
+        { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role, userConfig?.features) },
+        { role: 'system', content: dynamicContext },
+        ...contextMessages,
+      ];
+
+      const lastHistoryMsg = history[history.length - 1];
+      if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
+        messages.push({ role: 'user', content: userContent });
+      }
+
+      try { await evolution.sendPresenceComposing(remoteJid); } catch {}
+
+      aiResponse = await chatWithTools(messages, undefined, imageBase64, imageMime, userConfig);
     }
-
-    // Mostrar "digitando..." antes de responder
-    try {
-      await evolution.sendPresenceComposing(remoteJid);
-    } catch {
-      // presença é best-effort
-    }
-
-    // Chamar GPT-4o com function calling (tools)
-    const aiResponse = await chatWithTools(messages, imageBase64, imageMime, userConfig);
 
     // Salvar resposta da IA no histórico
     await db.saveChatMessage(senderPhone, 'assistant', aiResponse, 'text');

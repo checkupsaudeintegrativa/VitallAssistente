@@ -6,7 +6,7 @@ if (!globalThis.File) {
 
 import OpenAI, { toFile } from 'openai';
 import { env } from '../config/env';
-import { executeTool, getToolsForUser } from './ai-tools';
+import { executeTool, getToolsForUser, ToolDefinition } from './ai-tools';
 import { UserConfig } from '../config/users';
 
 let client: OpenAI | null = null;
@@ -33,6 +33,7 @@ export interface ChatMessage {
  */
 export async function chatWithTools(
   messages: ChatMessage[],
+  tools?: ToolDefinition[],
   imageBase64?: string,
   mimeType?: string,
   user?: UserConfig | null
@@ -60,7 +61,8 @@ export async function chatWithTools(
     }
 
     const MAX_TOOL_ITERATIONS = 5;
-    const tools = getToolsForUser(user);
+    // Se tools não foram passados como parâmetro, usa o filtro por usuário (fallback legado)
+    const resolvedTools = tools || getToolsForUser(user);
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const response = await openai.chat.completions.create({
@@ -68,7 +70,7 @@ export async function chatWithTools(
         temperature: 0.4,
         max_tokens: 1000,
         messages: finalMessages,
-        tools: tools as any,
+        tools: resolvedTools as any,
         tool_choice: 'auto',
       });
 

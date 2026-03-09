@@ -7,7 +7,7 @@ import { UserConfig, GoogleCalendarConfig } from '../config/users';
 
 // ── Types ──
 
-interface ToolDefinition {
+export interface ToolDefinition {
   type: 'function';
   function: {
     name: string;
@@ -557,6 +557,102 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
   }
 
   return tools;
+}
+
+/** Retorna toolDefinitions filtradas por uma lista de nomes */
+export function getToolsByNames(names: string[]): ToolDefinition[] {
+  const nameSet = new Set(names);
+  return toolDefinitions.filter((t) => nameSet.has(t.function.name));
+}
+
+/**
+ * Adapta as tools de lembrete para Google Calendar (target_calendar, remove phone, etc.)
+ * Extraído de getToolsForUser para uso pelo sistema de agentes.
+ */
+export function adaptCalendarTools(tools: ToolDefinition[], user?: UserConfig | null): ToolDefinition[] {
+  const calConfig = user?.features?.googleCalendar;
+  if (!calConfig || !gcal.isAvailable(calConfig)) return tools;
+
+  const hasCrossCalendars = calConfig.crossCalendars && calConfig.crossCalendars.length > 0;
+  const crossNames = calConfig.crossCalendars?.map((c) => c.name).join(', ') || '';
+
+  const createTargetParam = hasCrossCalendars
+    ? { target_calendar: { type: 'string', description: `Calendário alvo. Omita para usar o seu próprio. Valores possíveis: ${crossNames}` } }
+    : {};
+
+  const viewableCross = calConfig.crossCalendars?.filter((c) => c.canView) || [];
+  const viewNames = viewableCross.map((c) => c.name).join(', ');
+  const viewTargetParam = viewableCross.length > 0
+    ? { target_calendar: { type: 'string', description: `Calendário alvo. Omita para usar o seu próprio. Valores possíveis: ${viewNames}` } }
+    : {};
+
+  return tools.map((t) => {
+    if (t.function.name === 'create_reminder') {
+      return {
+        ...t,
+        function: {
+          ...t.function,
+          description: 'Cria um lembrete. NÃO precisa do parâmetro phone. Se não tiver horário, calcule: agora + 3h (mas NUNCA depois das 17h30 BRT). SEMPRE use recurring:true por padrão.',
+          parameters: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Descrição do lembrete. Ex: "Ligar para paciente Maria"' },
+              datetime: { type: 'string', description: 'Data/hora no formato ISO 8601. Ex: "2025-01-15T14:00:00-03:00". Se não tiver horário, calcule +3h capped 17h30 BRT.' },
+              phone: { type: 'string', description: 'Opcional — ignorado.' },
+              recurring: { type: 'boolean', description: 'SEMPRE true por padrão. Só use false se a pessoa pedir explicitamente "só uma vez".' },
+              ...createTargetParam,
+            },
+            required: ['title', 'datetime'],
+          },
+        },
+      };
+    }
+    if (t.function.name === 'list_reminders') {
+      return {
+        ...t,
+        function: {
+          ...t.function,
+          description: 'Lista todos os lembretes pendentes.',
+          parameters: { type: 'object', properties: { ...viewTargetParam }, required: [] },
+        },
+      };
+    }
+    if (t.function.name === 'delete_reminder') {
+      return {
+        ...t,
+        function: {
+          ...t.function,
+          description: 'Remove um lembrete pelo ID.',
+          parameters: {
+            type: 'object',
+            properties: {
+              reminder_id: { type: 'string', description: 'ID do lembrete' },
+              ...viewTargetParam,
+            },
+            required: ['reminder_id'],
+          },
+        },
+      };
+    }
+    if (t.function.name === 'confirm_reminder_done') {
+      return {
+        ...t,
+        function: {
+          ...t.function,
+          description: 'Confirma que a tarefa foi feita — para de lembrar.',
+          parameters: {
+            type: 'object',
+            properties: {
+              reminder_id: { type: 'string', description: 'ID do lembrete' },
+              ...viewTargetParam,
+            },
+            required: ['reminder_id'],
+          },
+        },
+      };
+    }
+    return t;
+  });
 }
 
 /** Executa uma ferramenta pelo nome e argumentos, retorna string JSON com resultado */
