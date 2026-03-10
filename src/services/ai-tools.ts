@@ -1874,7 +1874,17 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
     });
   }
 
-  const transactions = await gmail.fetchC6BankTransactions(date);
+  let transactions;
+  try {
+    transactions = await gmail.fetchC6BankTransactions(date);
+  } catch (err: any) {
+    console.error(`[SyncBank] Erro ao buscar emails do Gmail: ${err.message}`);
+    return JSON.stringify({
+      error: 'Erro ao acessar Gmail',
+      mensagem: `Não foi possível acessar o Gmail: ${err.message}. Verifique se as credenciais (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) estão corretas.`,
+    });
+  }
+
   const saidas = transactions.filter((t) => t.type === 'saida');
 
   if (saidas.length === 0) {
