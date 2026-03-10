@@ -24,6 +24,19 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'cobrança', 'cobranca', 'cobranças',
     'vencido', 'vencidos', 'vencida', 'vencidas',
     'resumo financeiro',
+    // Contas a pagar
+    'conta', 'contas', 'contas a pagar', 'conta a pagar',
+    'despesa', 'despesas', 'gasto', 'gastos',
+    'pagar', 'baixa', 'dar baixa',
+    'fornecedor', 'boleto',
+    'imposto', 'impostos',
+    'laboratorio', 'laboratório',
+    'antecipação', 'antecipacao', 'lucro', 'lucros', 'retirada',
+    'quanto gastei', 'quanto paguei',
+    // Importação bancária
+    'extrato', 'banco', 'transação', 'transacao', 'transações', 'transacoes',
+    'c6', 'c6 bank', 'sincronizar banco', 'sincroniza banco',
+    'importar banco', 'saídas do banco', 'saidas do banco',
   ],
   ponto: [
     'ponto', 'registro de ponto', 'registros de ponto',

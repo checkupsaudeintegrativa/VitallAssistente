@@ -1,6 +1,7 @@
 import * as clinicorp from './clinicorp';
 import * as db from './supabase';
 import * as gcal from './google-calendar';
+import * as gmail from './gmail';
 import * as ponto from './ponto-report';
 import * as evolution from './evolution';
 import { UserConfig, GoogleCalendarConfig } from '../config/users';
@@ -17,7 +18,12 @@ export interface ToolDefinition {
 }
 
 /** Ferramentas restritas a admin (não disponíveis para staff) */
-const FINANCIAL_TOOLS = new Set(['query_payments', 'get_financial_summary']);
+const FINANCIAL_TOOLS = new Set([
+  'query_payments', 'get_financial_summary',
+  'query_contas_pagar', 'create_conta_pagar', 'update_conta_pagar',
+  'dar_baixa_conta', 'delete_conta_pagar', 'get_contas_summary',
+  'sync_bank_transactions',
+]);
 
 /** Ferramentas de edição de ponto — somente admin */
 const PONTO_EDIT_TOOLS = new Set(['add_ponto_record', 'delete_ponto_record', 'generate_ponto_pdf', 'set_ausencia', 'delete_ausencia', 'set_saldo_snapshot']);
@@ -374,6 +380,129 @@ export const toolDefinitions: ToolDefinition[] = [
           data_referencia: { type: 'string', description: 'Data de referência no formato YYYY-MM-DD. O saldo diário será calculado a partir desta data.' },
         },
         required: ['employee_name', 'saldo_minutos', 'data_referencia'],
+      },
+    },
+  },
+  // ── Contas a Pagar ──
+  {
+    type: 'function',
+    function: {
+      name: 'query_contas_pagar',
+      description: 'Lista contas a pagar num intervalo de datas (por vencimento). Filtra por status, categoria e classificação. Use para "contas a pagar desse mês", "contas vencidas", "quanto devo de laboratório".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD (vencimento)' },
+          date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD (vencimento)' },
+          status: { type: 'string', description: 'Filtrar por status: "aberto", "realizado" ou "todos" (default: "todos")' },
+          categoria: { type: 'string', description: 'Filtrar por categoria (ex: "LABORATÓRIO", "IMPOSTOS", "MATERIAL"). Opcional.' },
+          classificacao: { type: 'string', description: 'Filtrar por classificação (ex: "CUSTO FIXO", "CUSTO VARIÁVEL"). Opcional.' },
+        },
+        required: ['date_from', 'date_to'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_conta_pagar',
+      description: 'Cria uma nova conta a pagar. Use quando o usuário pedir para registrar uma despesa, boleto, conta. Sempre confirme os dados antes de criar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          descricao: { type: 'string', description: 'Descrição da conta (ex: "Protético João - caso Maria")' },
+          valor: { type: 'number', description: 'Valor em reais (ex: 500.00)' },
+          vencimento: { type: 'string', description: 'Data de vencimento no formato YYYY-MM-DD' },
+          categoria: { type: 'string', description: 'Categoria (ex: "LABORATÓRIO", "IMPOSTOS", "MATERIAL", "ALUGUEL"). Opcional.' },
+          classificacao: { type: 'string', description: 'Classificação (ex: "CUSTO FIXO", "CUSTO VARIÁVEL"). Opcional.' },
+          competencia: { type: 'string', description: 'Mês de competência no formato YYYY-MM (ex: "2026-03"). Opcional, default = mês do vencimento.' },
+          forma_pagamento: { type: 'string', description: 'Forma de pagamento (ex: "PIX", "BOLETO", "CARTÃO"). Opcional.' },
+          fornecedor_documento: { type: 'string', description: 'CPF/CNPJ do fornecedor. Opcional.' },
+          observacoes: { type: 'string', description: 'Observações adicionais. Opcional.' },
+        },
+        required: ['descricao', 'valor', 'vencimento'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_conta_pagar',
+      description: 'Altera uma conta a pagar existente. Use para corrigir valor, vencimento, categoria, etc. Sempre confirme as alterações com o usuário.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'UUID da conta a pagar' },
+          descricao: { type: 'string', description: 'Nova descrição. Opcional.' },
+          valor: { type: 'number', description: 'Novo valor. Opcional.' },
+          vencimento: { type: 'string', description: 'Nova data de vencimento YYYY-MM-DD. Opcional.' },
+          categoria: { type: 'string', description: 'Nova categoria. Opcional.' },
+          classificacao: { type: 'string', description: 'Nova classificação. Opcional.' },
+          competencia: { type: 'string', description: 'Nova competência YYYY-MM. Opcional.' },
+          forma_pagamento: { type: 'string', description: 'Nova forma de pagamento. Opcional.' },
+          observacoes: { type: 'string', description: 'Novas observações. Opcional.' },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'dar_baixa_conta',
+      description: 'Marca uma conta a pagar como paga (dá baixa). Use quando o usuário disser "dá baixa", "paguei", "já paguei".',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'UUID da conta a pagar' },
+          data_pagamento: { type: 'string', description: 'Data do pagamento YYYY-MM-DD. Se omitido, usa a data de hoje.' },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_conta_pagar',
+      description: 'Exclui uma conta a pagar. Sempre confirme com o usuário antes de excluir.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'UUID da conta a pagar' },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_contas_summary',
+      description: 'Gera relatório/resumo de contas a pagar num período, agrupado por categoria, classificação ou status. Use para "quanto gastei com impostos", "resumo de despesas do mês", "quanto retirei".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD (vencimento)' },
+          date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD (vencimento)' },
+          agrupar_por: { type: 'string', description: 'Agrupar por: "categoria" (default), "classificacao" ou "status"' },
+        },
+        required: ['date_from', 'date_to'],
+      },
+    },
+  },
+  // ── Importação bancária (Gmail / C6 Bank) ──
+  {
+    type: 'function',
+    function: {
+      name: 'sync_bank_transactions',
+      description: 'Busca saídas bancárias (C6 Bank) de uma data no Gmail e cria automaticamente as contas a pagar já com baixa (status=realizado). Use para "sincronizar banco de hoje", "importar saídas do banco", "puxar extrato", "transações do banco".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+        },
+        required: ['date'],
       },
     },
   },
@@ -746,6 +875,28 @@ export async function executeTool(name: string, args: Record<string, any>, user?
 
       case 'set_saldo_snapshot':
         return executeSetSaldoSnapshot(args.employee_name, args.saldo_minutos, args.data_referencia);
+
+      // ── Contas a Pagar ──
+      case 'query_contas_pagar':
+        return executeQueryContasPagar(args.date_from, args.date_to, args.status, args.categoria, args.classificacao);
+
+      case 'create_conta_pagar':
+        return executeCreateContaPagar(args);
+
+      case 'update_conta_pagar':
+        return executeUpdateContaPagar(args);
+
+      case 'dar_baixa_conta':
+        return executeDarBaixaConta(args.id, args.data_pagamento);
+
+      case 'delete_conta_pagar':
+        return executeDeleteContaPagar(args.id);
+
+      case 'get_contas_summary':
+        return executeGetContasSummary(args.date_from, args.date_to, args.agrupar_por);
+
+      case 'sync_bank_transactions':
+        return executeSyncBankTransactions(args.date);
 
       default:
         return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
@@ -1470,5 +1621,334 @@ async function executeConfirmTermReceived(termId?: string, patientName?: string,
   return JSON.stringify({
     sucesso: false,
     mensagem: 'Informe term_id ou patient_name + date para identificar o termo',
+  });
+}
+
+// ── Contas a Pagar executors ──
+
+async function executeQueryContasPagar(
+  dateFrom: string,
+  dateTo: string,
+  status?: string,
+  categoria?: string,
+  classificacao?: string,
+): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  let query = supabase
+    .from('contas_pagar')
+    .select('id, descricao, valor, vencimento, status, categoria, classificacao, competencia, forma_pagamento, data_pagamento')
+    .gte('vencimento', dateFrom)
+    .lte('vencimento', dateTo)
+    .order('vencimento', { ascending: true })
+    .limit(50);
+
+  if (status && status !== 'todos') {
+    query = query.eq('status', status);
+  }
+  if (categoria) {
+    query = query.ilike('categoria', `%${categoria}%`);
+  }
+  if (classificacao) {
+    query = query.ilike('classificacao', `%${classificacao}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    return JSON.stringify({ error: `Erro ao consultar contas a pagar: ${error.message}` });
+  }
+
+  const contas = data || [];
+  const valorTotal = contas.reduce((sum: number, c: any) => sum + (c.valor || 0), 0);
+
+  return JSON.stringify({
+    total: contas.length,
+    valor_total: valorTotal,
+    contas: contas.map((c: any) => ({
+      id: c.id,
+      descricao: c.descricao,
+      valor: c.valor,
+      vencimento: c.vencimento,
+      status: c.status,
+      categoria: c.categoria || '',
+      classificacao: c.classificacao || '',
+    })),
+  });
+}
+
+async function executeCreateContaPagar(args: Record<string, any>): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const competencia = args.competencia || (args.vencimento ? args.vencimento.substring(0, 7) : undefined);
+
+  const row: Record<string, any> = {
+    descricao: args.descricao,
+    valor: args.valor,
+    vencimento: args.vencimento,
+    status: 'aberto',
+  };
+  if (competencia) row.competencia = competencia;
+  if (args.categoria) row.categoria = args.categoria;
+  if (args.classificacao) row.classificacao = args.classificacao;
+  if (args.forma_pagamento) row.forma_pagamento = args.forma_pagamento;
+  if (args.fornecedor_documento) row.fornecedor_documento = args.fornecedor_documento;
+  if (args.observacoes) row.observacoes = args.observacoes;
+
+  const { data, error } = await supabase
+    .from('contas_pagar')
+    .insert(row)
+    .select()
+    .single();
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao criar conta a pagar: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    conta: {
+      id: data.id,
+      descricao: data.descricao,
+      valor: data.valor,
+      vencimento: data.vencimento,
+      status: data.status,
+      categoria: data.categoria || '',
+    },
+    mensagem: `Conta criada: "${data.descricao}" - R$ ${data.valor.toFixed(2)} vencimento ${data.vencimento}`,
+  });
+}
+
+async function executeUpdateContaPagar(args: Record<string, any>): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const { id, ...fields } = args;
+  // Remove campos undefined
+  const updates: Record<string, any> = {};
+  for (const [key, val] of Object.entries(fields)) {
+    if (val !== undefined && val !== null) updates[key] = val;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return JSON.stringify({ error: 'Nenhum campo para atualizar informado' });
+  }
+
+  const { data, error } = await supabase
+    .from('contas_pagar')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao atualizar conta: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    conta: {
+      id: data.id,
+      descricao: data.descricao,
+      valor: data.valor,
+      vencimento: data.vencimento,
+      status: data.status,
+      categoria: data.categoria || '',
+    },
+    mensagem: `Conta "${data.descricao}" atualizada com sucesso`,
+  });
+}
+
+async function executeDarBaixaConta(id: string, dataPagamento?: string): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const hoje = getBrtNow().toISOString().split('T')[0];
+  const dataPgto = dataPagamento || hoje;
+
+  const { data, error } = await supabase
+    .from('contas_pagar')
+    .update({ status: 'realizado', data_pagamento: dataPgto })
+    .eq('id', id)
+    .select('id, descricao, valor')
+    .single();
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao dar baixa: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    id: data.id,
+    mensagem: `Conta "${data.descricao}" (R$ ${data.valor.toFixed(2)}) marcada como paga em ${dataPgto}`,
+  });
+}
+
+async function executeDeleteContaPagar(id: string): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  // Buscar a conta antes de excluir para retornar info
+  const { data: conta } = await supabase
+    .from('contas_pagar')
+    .select('id, descricao, valor')
+    .eq('id', id)
+    .single();
+
+  const { error } = await supabase
+    .from('contas_pagar')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao excluir conta: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    id,
+    mensagem: conta
+      ? `Conta "${conta.descricao}" (R$ ${conta.valor.toFixed(2)}) excluída`
+      : `Conta ${id} excluída`,
+  });
+}
+
+async function executeGetContasSummary(
+  dateFrom: string,
+  dateTo: string,
+  agruparPor?: string,
+): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const groupField = agruparPor === 'classificacao' ? 'classificacao'
+    : agruparPor === 'status' ? 'status'
+    : 'categoria';
+
+  const { data, error } = await supabase
+    .from('contas_pagar')
+    .select('valor, status, categoria, classificacao')
+    .gte('vencimento', dateFrom)
+    .lte('vencimento', dateTo);
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao gerar resumo: ${error.message}` });
+  }
+
+  const contas = data || [];
+  let totalGeral = 0;
+  let totalAberto = 0;
+  let totalRealizado = 0;
+
+  const grupoMap: Record<string, { total: number; quantidade: number }> = {};
+
+  for (const c of contas) {
+    const valor = c.valor || 0;
+    totalGeral += valor;
+    if (c.status === 'aberto') totalAberto += valor;
+    if (c.status === 'realizado') totalRealizado += valor;
+
+    const grupoKey = (c[groupField as keyof typeof c] as string) || 'Sem classificação';
+    if (!grupoMap[grupoKey]) grupoMap[grupoKey] = { total: 0, quantidade: 0 };
+    grupoMap[grupoKey].total += valor;
+    grupoMap[grupoKey].quantidade++;
+  }
+
+  const grupos = Object.entries(grupoMap)
+    .map(([nome, info]) => ({ nome, total: info.total, quantidade: info.quantidade }))
+    .sort((a, b) => b.total - a.total);
+
+  return JSON.stringify({
+    periodo: `${dateFrom} a ${dateTo}`,
+    total_contas: contas.length,
+    total_geral: totalGeral,
+    total_aberto: totalAberto,
+    total_realizado: totalRealizado,
+    agrupado_por: groupField,
+    grupos,
+  });
+}
+
+// ── Importação bancária (Gmail / C6 Bank) ──
+
+async function executeSyncBankTransactions(date: string): Promise<string> {
+  if (!gmail.isAvailable()) {
+    return JSON.stringify({
+      error: 'Gmail não configurado',
+      mensagem: 'As credenciais do Gmail (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) não estão configuradas.',
+    });
+  }
+
+  const transactions = await gmail.fetchC6BankTransactions(date);
+  const saidas = transactions.filter((t) => t.type === 'saida');
+
+  if (saidas.length === 0) {
+    return JSON.stringify({
+      sincronizadas: 0,
+      ja_existentes: 0,
+      total_saidas: 0,
+      valor_total: 0,
+      mensagem: `Nenhuma saída bancária encontrada para ${date}`,
+    });
+  }
+
+  const { supabase } = await import('./supabase');
+  const competencia = date.substring(0, 7); // YYYY-MM
+
+  let sincronizadas = 0;
+  let jaExistentes = 0;
+  let valorTotal = 0;
+  const contasCriadas: Array<{ descricao: string; valor: number }> = [];
+
+  for (const tx of saidas) {
+    // Dedup: verificar se já existe conta com esse emailMessageId no campo observacoes
+    const marker = `gmail:${tx.emailMessageId}`;
+    const { data: existing } = await supabase
+      .from('contas_pagar')
+      .select('id')
+      .ilike('observacoes', `%${marker}%`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      jaExistentes++;
+      continue;
+    }
+
+    // Descrição: usa subject se disponível, senão descrição do body
+    const descricao = tx.emailSubject
+      ? tx.emailSubject.substring(0, 200)
+      : tx.description.substring(0, 200);
+
+    const row = {
+      descricao,
+      valor: tx.amount,
+      vencimento: date,
+      status: 'realizado',
+      data_pagamento: date,
+      competencia,
+      categoria: 'BANCO',
+      forma_pagamento: 'PIX',
+      observacoes: `[${marker}] Importado automaticamente do C6 Bank`,
+    };
+
+    const { error } = await supabase
+      .from('contas_pagar')
+      .insert(row);
+
+    if (!error) {
+      sincronizadas++;
+      valorTotal += tx.amount;
+      contasCriadas.push({ descricao, valor: tx.amount });
+    } else {
+      console.error(`[SyncBank] Erro ao inserir conta: ${error.message}`);
+    }
+  }
+
+  return JSON.stringify({
+    sincronizadas,
+    ja_existentes: jaExistentes,
+    total_saidas: saidas.length,
+    valor_total: valorTotal,
+    contas_criadas: contasCriadas,
+    mensagem: sincronizadas > 0
+      ? `${sincronizadas} conta(s) criada(s) totalizando R$ ${valorTotal.toFixed(2)}`
+      : jaExistentes > 0
+        ? `Todas as ${jaExistentes} saída(s) já foram importadas anteriormente`
+        : 'Nenhuma conta criada',
   });
 }

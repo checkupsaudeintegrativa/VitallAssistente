@@ -42,6 +42,11 @@ export const env = {
   GOOGLE_CALENDAR_JESSICA_ID: process.env.GOOGLE_CALENDAR_JESSICA_ID || '',
   GOOGLE_CALENDAR_ANA_ID: process.env.GOOGLE_CALENDAR_ANA_ID || '',
 
+  // Gmail (OAuth — para buscar transações bancárias C6 Bank)
+  GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID || '',
+  GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET || '',
+  GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN || '',
+
   // App
   PORT: process.env.PORT || '3000',
 
