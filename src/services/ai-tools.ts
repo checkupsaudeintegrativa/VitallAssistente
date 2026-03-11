@@ -1883,6 +1883,7 @@ const RECIPIENT_RULES: Array<{ keywords: string[]; result: Omit<ContaClassificac
   { keywords: ['victoria', 'victória', 'vitória'], result: { descPrefix: 'Dra. Victória', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
   { keywords: ['fabiana'], result: { descPrefix: 'Dra. Fabiana', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
   { keywords: ['rodolfo'], result: { descPrefix: 'Dr. Rodolfo', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['pedro henrique cardoso'], result: { descPrefix: 'Pedro Henrique', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
   { keywords: ['pedro'], result: { descPrefix: 'Dr. Pedro', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
   // Profissionais (funcionárias — custo fixo)
   { keywords: ['jessica', 'jéssica'], result: { descPrefix: 'Jéssica', categoria: 'PROFISSIONAIS', classificacao: 'Custo Fixo' } },
@@ -1895,6 +1896,7 @@ const RECIPIENT_RULES: Array<{ keywords: string[]; result: Omit<ContaClassificac
   { keywords: ['lisboa'], result: { descPrefix: 'Laboratório Lisboa', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
   { keywords: ['inova'], result: { descPrefix: 'Laboratório Inova', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
   { keywords: ['clearcorrect', 'clear correct'], result: { descPrefix: 'ClearCorrect', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
+  { keywords: ['claudio roberto'], result: { descPrefix: 'Laboratório Cláudio', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
   // Dental
   { keywords: ['dental med'], result: { descPrefix: 'Dental Med Sul', categoria: 'DENTAL', classificacao: 'Custo Variável' } },
   { keywords: ['dental speed'], result: { descPrefix: 'Dental Speed', categoria: 'DENTAL', classificacao: 'Custo Variável' } },
@@ -1910,8 +1912,11 @@ const RECIPIENT_RULES: Array<{ keywords: string[]; result: Omit<ContaClassificac
   { keywords: ['elkertec'], result: { descPrefix: 'Elkertec', categoria: 'MANUTENÇÃO', classificacao: 'Custo Variável' } },
   // Marketing
   { keywords: ['google'], result: { descPrefix: 'Campanha Google', categoria: 'MARKETING', classificacao: 'Custo Fixo' } },
-  // Antecipação de lucros (Dra. Ana = dona)
+  // Antecipação de lucros (família da Dra. Ana)
   { keywords: ['ana maria'], result: { descPrefix: 'Dra. Ana Maria', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
+  { keywords: ['ana carolina cardoso'], result: { descPrefix: 'Ana Carolina', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
+  { keywords: ['arthur gabriel'], result: { descPrefix: 'Arthur Gabriel', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
+  { keywords: ['cezar augusto'], result: { descPrefix: 'Cezar Augusto', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
 ];
 
 /** Classifica uma transação bancária baseado no nome do destinatário */
