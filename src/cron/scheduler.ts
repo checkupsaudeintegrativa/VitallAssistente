@@ -293,10 +293,6 @@ export function startScheduler(): void {
   if (gmail.isAvailable()) {
     cron.schedule('*/2 * * * *', async () => {
       try {
-        // Só roda em horário comercial (8h-20h BRT = 11h-23h UTC)
-        const nowUtc = new Date().getUTCHours();
-        if (nowUtc < 11 || nowUtc > 23) return;
-
         const today = new Date();
         const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
         const dateStr = brtDate.toISOString().split('T')[0];
@@ -320,7 +316,7 @@ export function startScheduler(): void {
       }
     });
 
-    console.log('  - */2 * * * *: Auto-importação C6 Bank (a cada 2 min, 8h-20h BRT)');
+    console.log('  - */2 * * * *: Auto-importação C6 Bank (a cada 2 min, 24h)');
   }
 
   console.log('[Cron] Scheduler de lembretes iniciado:');
