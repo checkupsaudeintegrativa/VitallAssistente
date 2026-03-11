@@ -15,7 +15,9 @@ import { listAppointments } from '../services/clinicorp';
 import { sendText, sendMedia } from '../services/evolution';
 import { USER_BY_PHONE } from '../config/users';
 import * as gcal from '../services/google-calendar';
+import * as gmail from '../services/gmail';
 import { generatePontoReports } from '../services/ponto-report';
+import { executeTool } from '../services/ai-tools';
 
 // ── Procedimentos que exigem termo de consentimento ──
 const CONSENT_KEYWORDS = [
@@ -286,6 +288,40 @@ export function startScheduler(): void {
       console.error('[Cron:Ponto] Erro ao gerar/enviar relatórios:', error.message);
     }
   });
+
+  // Auto-importação de saídas bancárias C6 Bank — a cada 10 min, seg-sáb, 8h-20h BRT (11h-23h UTC)
+  if (gmail.isAvailable()) {
+    cron.schedule('*/10 * * * 1-6', async () => {
+      try {
+        // Só roda em horário comercial (8h-20h BRT = 11h-23h UTC)
+        const nowUtc = new Date().getUTCHours();
+        if (nowUtc < 11 || nowUtc > 23) return;
+
+        const today = new Date();
+        const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
+        const dateStr = brtDate.toISOString().split('T')[0];
+
+        // Usa executeTool como admin para processar
+        const result = await executeTool('sync_bank_transactions', { date: dateStr }, { name: 'Sistema', role: 'admin', phones: [], features: {} } as any);
+        const parsed = JSON.parse(result);
+
+        if (parsed.sincronizadas > 0) {
+          console.log(`[Cron:Banco] ${parsed.sincronizadas} saída(s) importada(s) do C6 Bank (R$ ${parsed.valor_total.toFixed(2)})`);
+
+          // Notifica o admin
+          const msg = `💰 *Importação automática do banco*\n\n${parsed.sincronizadas} saída(s) do C6 Bank importada(s) como contas a pagar:\n\n${parsed.contas_criadas.map((c: any) => `• *R$ ${c.valor.toFixed(2)}* — ${c.descricao} _(${c.categoria})_`).join('\n')}\n\nTotal: *R$ ${parsed.valor_total.toFixed(2)}*`;
+          await sendText('5511943635555', msg);
+        } else if (parsed.error) {
+          console.error(`[Cron:Banco] Erro: ${parsed.mensagem || parsed.error}`);
+        }
+        // Se ja_existentes > 0 e sincronizadas === 0, não loga nada (normal)
+      } catch (error: any) {
+        console.error('[Cron:Banco] Erro ao importar transações bancárias:', error.message);
+      }
+    });
+
+    console.log('  - */10 * * * 1-6: Auto-importação C6 Bank (a cada 10 min, seg-sáb, 8h-20h BRT)');
+  }
 
   console.log('[Cron] Scheduler de lembretes iniciado:');
   console.log('  - */5 * * * *: Lembretes pessoais (a cada 5 min)');
