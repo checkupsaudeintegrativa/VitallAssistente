@@ -303,10 +303,6 @@ export function startScheduler(): void {
 
         if (parsed.sincronizadas > 0) {
           console.log(`[Cron:Banco] ${parsed.sincronizadas} saída(s) importada(s) do C6 Bank (R$ ${parsed.valor_total.toFixed(2)})`);
-
-          // Notifica o admin
-          const msg = `💰 *Importação automática do banco*\n\n${parsed.sincronizadas} saída(s) do C6 Bank importada(s) como contas a pagar:\n\n${parsed.contas_criadas.map((c: any) => `• *R$ ${c.valor.toFixed(2)}* — ${c.descricao} _(${c.categoria})_`).join('\n')}\n\nTotal: *R$ ${parsed.valor_total.toFixed(2)}*`;
-          await sendText('5511943635555', msg);
         } else if (parsed.error) {
           console.error(`[Cron:Banco] Erro: ${parsed.mensagem || parsed.error}`);
         }
