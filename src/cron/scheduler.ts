@@ -291,7 +291,7 @@ export function startScheduler(): void {
 
   // Auto-importação de saídas bancárias C6 Bank — a cada 10 min, seg-sáb, 8h-20h BRT (11h-23h UTC)
   if (gmail.isAvailable()) {
-    cron.schedule('*/10 * * * 1-6', async () => {
+    cron.schedule('*/2 * * * *', async () => {
       try {
         // Só roda em horário comercial (8h-20h BRT = 11h-23h UTC)
         const nowUtc = new Date().getUTCHours();
@@ -320,7 +320,7 @@ export function startScheduler(): void {
       }
     });
 
-    console.log('  - */10 * * * 1-6: Auto-importação C6 Bank (a cada 10 min, seg-sáb, 8h-20h BRT)');
+    console.log('  - */2 * * * *: Auto-importação C6 Bank (a cada 2 min, 8h-20h BRT)');
   }
 
   console.log('[Cron] Scheduler de lembretes iniciado:');
