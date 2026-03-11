@@ -46,8 +46,10 @@ export async function fetchC6BankTransactions(dateStr: string): Promise<BankTran
   const [year, month, day] = dateStr.split('-');
   const afterDate = `${year}/${month}/${day}`;
 
-  const nextDay = new Date(Number(year), Number(month) - 1, Number(day) + 1);
-  const beforeDate = `${nextDay.getFullYear()}/${String(nextDay.getMonth() + 1).padStart(2, '0')}/${String(nextDay.getDate()).padStart(2, '0')}`;
+  // +2 dias no "before" para cobrir fuso BRT (UTC-3):
+  // emails das 21h-23h59 BRT caem no dia seguinte em UTC
+  const afterDay = new Date(Number(year), Number(month) - 1, Number(day) + 2);
+  const beforeDate = `${afterDay.getFullYear()}/${String(afterDay.getMonth() + 1).padStart(2, '0')}/${String(afterDay.getDate()).padStart(2, '0')}`;
 
   const query = `from:no-reply@c6bank.com.br after:${afterDate} before:${beforeDate}`;
   console.log(`[Gmail] Buscando emails C6 Bank: ${query}`);
@@ -81,6 +83,15 @@ export async function fetchC6BankTransactions(dateStr: string): Promise<BankTran
 
       const parsed = parseC6BankEmail(body, subject, from);
       if (parsed) {
+        // Filtra pela data real da transação (corpo do email tem "em DD/MM/YYYY")
+        // Necessário porque a query Gmail usa +1 dia de margem para cobrir fuso BRT
+        const expectedDate = `${day}/${month}/${year}`;
+        const hasDate = body.includes(expectedDate);
+        if (!hasDate) {
+          console.log(`[Gmail] Email ignorado (data diferente de ${expectedDate}): ${subject}`);
+          continue;
+        }
+
         transactions.push({
           ...parsed,
           recipient: extractRecipient(body),
