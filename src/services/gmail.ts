@@ -171,18 +171,22 @@ function parseC6BankEmail(
 ): { amount: number; type: 'entrada' | 'saida'; description: string } | null {
   const fullText = `${from}\n${subject}\n${body}`.toLowerCase();
 
-  const saidaKeywords = ['enviado', 'pagamento realizado', 'débito', 'debito', 'saque', 'tarifa', 'taxa'];
-  const entradaKeywords = ['recebid', 'depósito', 'deposito', 'crédito', 'credito', 'pix recebido'];
+  // Keywords que indicam SAÍDA (dinheiro saiu da conta)
+  // NÃO incluir "débito/debito" — é ambíguo (recebimento via cartão de débito ≠ saída)
+  const saidaKeywords = ['pix enviado', 'enviado no valor', 'pagamento realizado', 'saque', 'tarifa', 'taxa'];
+  // Keywords que indicam ENTRADA (dinheiro entrou na conta)
+  const entradaKeywords = ['recebid', 'recebimentos agendados', 'depósito', 'deposito', 'crédito', 'credito', 'pix recebido'];
 
   const isSaida = saidaKeywords.some((kw) => fullText.includes(kw));
   const isEntrada = entradaKeywords.some((kw) => fullText.includes(kw));
 
   if (!isSaida && !isEntrada) {
-    console.log(`[Gmail] Email ignorado (não financeiro): ${from}`);
+    console.log(`[Gmail] Email ignorado (não é transação): ${subject}`);
     return null;
   }
 
-  const type = isEntrada && !isSaida ? 'entrada' : 'saida';
+  // Entrada tem prioridade — se ambos matcham, é entrada (ex: "recebimento via débito")
+  const type = isEntrada ? 'entrada' : 'saida';
 
   const amountRegex = /R\$\s*([\d.,]+)/g;
   const searchText = `${body}\n${subject}`;
