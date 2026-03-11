@@ -2230,87 +2230,200 @@ function classifyEntrada(recipient: string, rawBody: string): EntradaClassificac
 // ── Sync entradas bancárias (Gmail → lancamentos_conta_corrente) ──
 
 async function executeSyncBankEntradas(date: string): Promise<string> {
-  if (!gmail.isAvailable()) {
-    return JSON.stringify({
-      error: 'Gmail não configurado',
-      mensagem: 'As credenciais do Gmail (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) não estão configuradas.',
-    });
-  }
-
-  let transactions;
-  try {
-    transactions = await gmail.fetchC6BankTransactions(date);
-  } catch (err: any) {
-    console.error(`[SyncBankEntradas] Erro ao buscar emails do Gmail: ${err.message}`);
-    return JSON.stringify({
-      error: 'Erro ao acessar Gmail',
-      mensagem: `Não foi possível acessar o Gmail: ${err.message}. Verifique se as credenciais estão corretas.`,
-    });
-  }
-
-  const entradas = transactions.filter((t) => t.type === 'entrada');
-
-  if (entradas.length === 0) {
-    return JSON.stringify({
-      sincronizadas: 0,
-      ja_existentes: 0,
-      total_entradas: 0,
-      valor_total: 0,
-      mensagem: `Nenhuma entrada bancária encontrada para ${date}`,
-    });
-  }
-
   const { supabase } = await import('./supabase');
 
   let sincronizadas = 0;
   let jaExistentes = 0;
   let valorTotal = 0;
-  const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string }> = [];
+  const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string; contraparte: string }> = [];
 
-  for (const tx of entradas) {
-    // Dedup: verificar se já existe lançamento com esse emailMessageId
-    const marker = `gmail:${tx.emailMessageId}`;
-    const { data: existing } = await supabase
-      .from('lancamentos_conta_corrente')
-      .select('id')
-      .ilike('observacoes', `%${marker}%`)
-      .limit(1);
+  let hasCardFromGmail = false;
+  let gmailCardTx: gmail.BankTransaction | null = null;
 
-    if (existing && existing.length > 0) {
-      jaExistentes++;
-      continue;
+  // ── 1) Entradas do Gmail (PIX, depósitos; detecta cartão para etapa 2) ──
+  if (gmail.isAvailable()) {
+    let transactions;
+    try {
+      transactions = await gmail.fetchC6BankTransactions(date);
+    } catch (err: any) {
+      console.error(`[SyncBankEntradas] Erro ao buscar emails do Gmail: ${err.message}`);
     }
 
-    const classificacao = classifyEntrada(tx.recipient, tx.rawBody);
+    if (transactions) {
+      const entradas = transactions.filter((t) => t.type === 'entrada');
+      for (const tx of entradas) {
+        const classificacao = classifyEntrada(tx.recipient, tx.rawBody);
+        // Separar entradas de cartão — serão detalhadas na etapa 2
+        if (classificacao.categoria === 'RECEBÍVEIS CARTÃO' || classificacao.categoria === 'CRÉDITO') {
+          hasCardFromGmail = true;
+          gmailCardTx = tx;
+          continue;
+        }
 
-    const row = {
-      data: date,
-      hora: null,
-      tipo: 'entrada',
-      descricao: classificacao.descricao,
-      contraparte: tx.recipient || null,
-      valor: tx.amount,
-      categoria: classificacao.categoria,
-      observacoes: `[${marker}] Importado automaticamente do C6 Bank`,
-    };
+        const marker = `gmail:${tx.emailMessageId}`;
+        const { data: existing } = await supabase
+          .from('lancamentos_conta_corrente')
+          .select('id')
+          .ilike('observacoes', `%${marker}%`)
+          .limit(1);
 
-    const { error } = await supabase
-      .from('lancamentos_conta_corrente')
-      .insert(row);
+        if (existing && existing.length > 0) {
+          jaExistentes++;
+          continue;
+        }
 
-    if (!error) {
-      sincronizadas++;
-      valorTotal += tx.amount;
-      lancamentosCriados.push({ descricao: classificacao.descricao, valor: tx.amount, categoria: classificacao.categoria });
-    } else {
-      console.error(`[SyncBankEntradas] Erro ao inserir lançamento: ${error.message}`);
+        const row = {
+          data: date,
+          hora: null,
+          tipo: 'entrada',
+          descricao: classificacao.descricao,
+          contraparte: tx.recipient || null,
+          valor: tx.amount,
+          categoria: classificacao.categoria,
+          observacoes: `[${marker}] Importado automaticamente do C6 Bank`,
+        };
+
+        const { error } = await supabase
+          .from('lancamentos_conta_corrente')
+          .insert(row);
+
+        if (!error) {
+          sincronizadas++;
+          valorTotal += tx.amount;
+          lancamentosCriados.push({ descricao: classificacao.descricao, valor: tx.amount, categoria: classificacao.categoria, contraparte: tx.recipient || '' });
+        } else {
+          console.error(`[SyncBankEntradas] Erro ao inserir lançamento Gmail: ${error.message}`);
+        }
+      }
+    }
+  }
+
+  // ── 2) Entradas de cartão: Excel (parcelas) + Clinicorp (paciente) ──
+  if (hasCardFromGmail) {
+    let cardImported = false;
+
+    // 2a) Tentar extrair parcelas do Excel anexo do C6 Bank
+    let recebiveis: gmail.RecebívelParcela[] = [];
+    try {
+      recebiveis = await gmail.fetchRecebiveis(date);
+    } catch (err: any) {
+      console.warn(`[SyncBankEntradas] Erro ao extrair Excel recebíveis: ${err.message}`);
+    }
+
+    if (recebiveis.length > 0) {
+      // 2b) Buscar pagamentos cartão do Clinicorp para cruzar nome do paciente
+      let clinicorpCards: any[] = [];
+      try {
+        const raw = await clinicorp.listPayments(date, date);
+        const payments = Array.isArray(raw) ? raw : [];
+        clinicorpCards = payments.filter((p: any) =>
+          p.PaymentReceived === 'X' &&
+          p.Canceled !== 'X' &&
+          (p.Type?.includes('CREDIT_CARD') || p.Type?.includes('DEBIT_CARD'))
+        );
+      } catch (err: any) {
+        console.warn(`[SyncBankEntradas] Clinicorp indisponível para cruzamento: ${err.message}`);
+      }
+
+      // Matching: para cada parcela do Excel, encontrar paciente no Clinicorp pelo valor bruto
+      const usedClinicorpIds = new Set<string>();
+
+      for (const rec of recebiveis) {
+        const nsuMarker = `c6_recebivel:${rec.nsu}_${rec.parcela}`;
+        const { data: existing } = await supabase
+          .from('lancamentos_conta_corrente')
+          .select('id')
+          .ilike('observacoes', `%${nsuMarker}%`)
+          .limit(1);
+
+        if (existing && existing.length > 0) {
+          jaExistentes++;
+          continue;
+        }
+
+        // Encontrar paciente pelo valor bruto
+        let patientName = '';
+        const matchIdx = clinicorpCards.findIndex((p: any) => {
+          const pid = String(p.id || p.PaymentHeaderId || '');
+          if (usedClinicorpIds.has(pid)) return false;
+          return Math.abs(Number(p.Amount || 0) - rec.valorBruto) < 0.01;
+        });
+        if (matchIdx >= 0) {
+          const match = clinicorpCards[matchIdx];
+          patientName = (match.PatientName || '').replace(/\s*\(\d+\)$/, '');
+          usedClinicorpIds.add(String(match.id || match.PaymentHeaderId || ''));
+        }
+
+        const categoria = rec.tipo.toLowerCase().includes('déb') ? 'CARTÃO DÉBITO' : 'CARTÃO CRÉDITO';
+        const parcelaInfo = rec.parcela !== '1/1' ? ` (${rec.parcela})` : '';
+        const descricao = patientName
+          ? `${rec.bandeira} ${rec.tipo}${parcelaInfo} - ${patientName}`
+          : `${rec.bandeira} ${rec.tipo}${parcelaInfo}`;
+
+        const row = {
+          data: date,
+          hora: null,
+          tipo: 'entrada',
+          descricao,
+          contraparte: patientName || null,
+          valor: rec.valorLiquido,
+          categoria,
+          observacoes: `[${nsuMarker}] Bruto: R$ ${rec.valorBruto.toFixed(2)} | Taxa: R$ ${rec.taxa.toFixed(2)} | NSU: ${rec.nsu}`,
+        };
+
+        const { error } = await supabase
+          .from('lancamentos_conta_corrente')
+          .insert(row);
+
+        if (!error) {
+          sincronizadas++;
+          valorTotal += rec.valorLiquido;
+          lancamentosCriados.push({ descricao, valor: rec.valorLiquido, categoria, contraparte: patientName });
+          cardImported = true;
+        } else {
+          console.error(`[SyncBankEntradas] Erro ao inserir recebível: ${error.message}`);
+        }
+      }
+    }
+
+    // 2c) Fallback: se não conseguiu via Excel, usar Gmail genérico
+    if (!cardImported && gmailCardTx) {
+      const marker = `gmail:${gmailCardTx.emailMessageId}`;
+      const { data: existing } = await supabase
+        .from('lancamentos_conta_corrente')
+        .select('id')
+        .ilike('observacoes', `%${marker}%`)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        jaExistentes++;
+      } else {
+        const classificacao = classifyEntrada(gmailCardTx.recipient, gmailCardTx.rawBody);
+        const row = {
+          data: date,
+          hora: null,
+          tipo: 'entrada',
+          descricao: classificacao.descricao,
+          contraparte: gmailCardTx.recipient || null,
+          valor: gmailCardTx.amount,
+          categoria: classificacao.categoria,
+          observacoes: `[${marker}] Importado automaticamente do C6 Bank (fallback)`,
+        };
+
+        const { error } = await supabase.from('lancamentos_conta_corrente').insert(row);
+        if (!error) {
+          sincronizadas++;
+          valorTotal += gmailCardTx.amount;
+          lancamentosCriados.push({ descricao: classificacao.descricao, valor: gmailCardTx.amount, categoria: classificacao.categoria, contraparte: '' });
+          console.log(`[SyncBankEntradas] Fallback Gmail para cartão: R$ ${gmailCardTx.amount}`);
+        }
+      }
     }
   }
 
   return JSON.stringify({
     sincronizadas,
     ja_existentes: jaExistentes,
-    total_entradas: entradas.length,
     valor_total: valorTotal,
     lancamentos_criados: lancamentosCriados,
     mensagem: sincronizadas > 0

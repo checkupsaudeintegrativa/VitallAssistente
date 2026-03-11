@@ -1,4 +1,8 @@
 import { google } from 'googleapis';
+import { execSync } from 'child_process';
+import { writeFileSync, readFileSync, unlinkSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { env } from '../config/env';
 
 // Lazy init — só cria o client se as env vars estiverem preenchidas
@@ -265,4 +269,116 @@ function parseBRL(value: string): number {
   const cleaned = value.replace(/\./g, '').replace(',', '.');
   const num = parseFloat(cleaned);
   return isNaN(num) ? 0 : num;
+}
+
+// ── Extração de recebíveis do Excel anexo do C6 Bank ──
+
+export interface RecebívelParcela {
+  bandeira: string;
+  tipo: string; // "Crédito" | "Débito"
+  parcela: string; // "1/2", "2/2", "1/1"
+  valorBruto: number;
+  taxa: number;
+  valorLiquido: number;
+  nsu: string;
+}
+
+const C6_EXCEL_PASSWORD = '591389';
+
+/**
+ * Busca o email de recebíveis do C6 Bank para uma data, baixa o Excel anexo,
+ * decripta e retorna as parcelas individuais.
+ */
+export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcela[]> {
+  const gmail = getGmailClient();
+  const [year, month, day] = dateStr.split('-');
+
+  // O arquivo "Recebiveis-Detalhado-C6Pay-YYYY-MM-DD.xlsx" vem no email do dia anterior ou mesmo dia
+  const afterDay = new Date(Number(year), Number(month) - 1, Number(day) - 1);
+  const beforeDay = new Date(Number(year), Number(month) - 1, Number(day) + 2);
+  const afterDate = `${afterDay.getFullYear()}/${String(afterDay.getMonth() + 1).padStart(2, '0')}/${String(afterDay.getDate()).padStart(2, '0')}`;
+  const beforeDate = `${beforeDay.getFullYear()}/${String(beforeDay.getMonth() + 1).padStart(2, '0')}/${String(beforeDay.getDate()).padStart(2, '0')}`;
+
+  const query = `from:no-reply@c6bank.com.br after:${afterDate} before:${beforeDate} subject:resumo`;
+  console.log(`[Gmail] Buscando recebíveis Excel: ${query}`);
+
+  const listRes = await gmail.users.messages.list({ userId: 'me', q: query, maxResults: 10 });
+  const messages = listRes.data.messages || [];
+
+  const targetFilename = `Recebiveis-Detalhado-C6Pay-${dateStr}.xlsx`;
+
+  for (const msg of messages) {
+    const detail = await gmail.users.messages.get({ userId: 'me', id: msg.id!, format: 'full' });
+    const parts = detail.data.payload?.parts || [];
+
+    for (const part of parts) {
+      if (!part.filename || !part.body?.attachmentId) continue;
+      if (part.filename !== targetFilename) continue;
+
+      console.log(`[Gmail] Encontrado anexo: ${part.filename}`);
+
+      const attach = await gmail.users.messages.attachments.get({
+        userId: 'me',
+        messageId: msg.id!,
+        id: part.body.attachmentId,
+      });
+
+      const data = attach.data.data || '';
+      const buffer = Buffer.from(data.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+
+      return decryptAndParseExcel(buffer);
+    }
+  }
+
+  console.log(`[Gmail] Anexo ${targetFilename} não encontrado`);
+  return [];
+}
+
+function decryptAndParseExcel(buffer: Buffer): RecebívelParcela[] {
+  const encPath = join(tmpdir(), `c6_enc_${Date.now()}.xls`);
+  const decPath = join(tmpdir(), `c6_dec_${Date.now()}.xls`);
+
+  try {
+    writeFileSync(encPath, buffer);
+    execSync(`python -m msoffcrypto -p ${C6_EXCEL_PASSWORD} "${encPath}" "${decPath}"`, { stdio: 'pipe' });
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const XLSX = require('xlsx');
+    const decBuffer = readFileSync(decPath);
+    const workbook = XLSX.read(decBuffer, { type: 'buffer' });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    const parcelas: RecebívelParcela[] = [];
+    for (const row of rows) {
+      if (!row || row.length < 12) continue;
+      // Linhas de subtotal têm "-" nas colunas de detalhe — pular
+      if (row[5] === '-' || row[5] === undefined) continue;
+      // Linha de transação real: col 5 = "Venda"
+      if (String(row[5]).toLowerCase() !== 'venda') continue;
+
+      const parcela: RecebívelParcela = {
+        bandeira: String(row[0] || ''),
+        tipo: String(row[1] || ''),
+        parcela: String(row[8] || '1/1'),
+        valorBruto: Math.abs(Number(row[9]) || 0),
+        taxa: Number(row[10]) || 0,
+        valorLiquido: Math.abs(Number(row[11]) || 0),
+        nsu: String(row[6] || ''),
+      };
+
+      if (parcela.valorBruto > 0) {
+        parcelas.push(parcela);
+      }
+    }
+
+    console.log(`[Gmail] Excel decriptado: ${parcelas.length} parcela(s) de recebíveis`);
+    return parcelas;
+  } catch (err: any) {
+    console.warn(`[Gmail] Erro ao decriptar/parsear Excel: ${err.message}`);
+    return [];
+  } finally {
+    try { unlinkSync(encPath); } catch {}
+    try { unlinkSync(decPath); } catch {}
+  }
 }
