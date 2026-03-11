@@ -312,8 +312,50 @@ export function startScheduler(): void {
       }
     });
 
-    console.log('  - */2 * * * *: Auto-importação C6 Bank (a cada 2 min, 24h)');
+    console.log('  - */2 * * * *: Auto-importação C6 Bank saídas (a cada 2 min, 24h)');
+
+    // Auto-importação de ENTRADAS bancárias C6 Bank — a cada 2 min
+    cron.schedule('*/2 * * * *', async () => {
+      try {
+        const today = new Date();
+        const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
+        const dateStr = brtDate.toISOString().split('T')[0];
+
+        const result = await executeTool('sync_bank_entradas', { date: dateStr }, { name: 'Sistema', role: 'admin', phones: [], features: {} } as any);
+        const parsed = JSON.parse(result);
+
+        if (parsed.sincronizadas > 0) {
+          console.log(`[Cron:Banco] ${parsed.sincronizadas} entrada(s) importada(s) do C6 Bank (R$ ${parsed.valor_total.toFixed(2)})`);
+        } else if (parsed.error) {
+          console.error(`[Cron:Banco] Erro entradas: ${parsed.mensagem || parsed.error}`);
+        }
+      } catch (error: any) {
+        console.error('[Cron:Banco] Erro ao importar entradas bancárias:', error.message);
+      }
+    });
+
+    console.log('  - */2 * * * *: Auto-importação C6 Bank entradas (a cada 2 min, 24h)');
   }
+
+  // Auto-importação de vendas Clinicorp — a cada 2 min
+  cron.schedule('*/2 * * * *', async () => {
+    try {
+      const today = new Date();
+      const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
+      const dateStr = brtDate.toISOString().split('T')[0];
+
+      const result = await executeTool('sync_clinicorp_payments', { date: dateStr }, { name: 'Sistema', role: 'admin', phones: [], features: {} } as any);
+      const parsed = JSON.parse(result);
+
+      if (parsed.sincronizadas > 0) {
+        console.log(`[Cron:Clinicorp] ${parsed.sincronizadas} venda(s) importada(s) do Clinicorp (R$ ${parsed.valor_total.toFixed(2)})`);
+      } else if (parsed.error) {
+        console.error(`[Cron:Clinicorp] Erro: ${parsed.mensagem || parsed.error}`);
+      }
+    } catch (error: any) {
+      console.error('[Cron:Clinicorp] Erro ao importar vendas do Clinicorp:', error.message);
+    }
+  });
 
   console.log('[Cron] Scheduler de lembretes iniciado:');
   console.log('  - */5 * * * *: Lembretes pessoais (a cada 5 min)');
@@ -323,4 +365,5 @@ export function startScheduler(): void {
   console.log('  - */2 * * * *: Lembretes do Google Calendar (a cada 2 min)');
   console.log('  - 10:30/20:00 UTC (7h30/17h BRT): Digest de lembretes pendentes');
   console.log('  - 11:00 UTC (08:00 BRT): Relatório de ponto semanal (segunda-feira)');
+  console.log('  - */2 * * * *: Auto-importação vendas Clinicorp (a cada 2 min, 24h)');
 }

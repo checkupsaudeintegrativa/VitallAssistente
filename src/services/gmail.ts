@@ -88,8 +88,15 @@ export async function fetchC6BankTransactions(dateStr: string): Promise<BankTran
         const expectedDate = `${day}/${month}/${year}`;
         const hasDate = body.includes(expectedDate);
         if (!hasDate) {
-          console.log(`[Gmail] Email ignorado (data diferente de ${expectedDate}): ${subject}`);
-          continue;
+          // Fallback: emails de recebíveis dizem "Hoje" em vez da data explícita.
+          // Usa o header Date do email (convertido para BRT) como referência.
+          const dateHeader = headers.find((h) => h.name?.toLowerCase() === 'date')?.value || '';
+          const emailDateBRT = parseEmailDateToBRT(dateHeader);
+          if (emailDateBRT !== dateStr) {
+            console.log(`[Gmail] Email ignorado (data diferente de ${expectedDate}): ${subject}`);
+            continue;
+          }
+          console.log(`[Gmail] Email aceito via fallback header Date (${emailDateBRT}): ${subject}`);
         }
 
         transactions.push({
@@ -232,6 +239,25 @@ function extractRecipient(body: string): string {
   if (deMatch) return deMatch[1].trim();
 
   return '';
+}
+
+/**
+ * Converte o header Date do email (RFC 2822) para YYYY-MM-DD em BRT (UTC-3).
+ * Ex: "Mon, 2 Mar 2026 06:15:00 +0000" → "2026-03-02"
+ */
+function parseEmailDateToBRT(dateHeader: string): string {
+  try {
+    const d = new Date(dateHeader);
+    if (isNaN(d.getTime())) return '';
+    // Converte para BRT (UTC-3)
+    const brt = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+    const y = brt.getUTCFullYear();
+    const m = String(brt.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(brt.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  } catch {
+    return '';
+  }
 }
 
 /** Converte string BRL "1.234,56" para número 1234.56 */

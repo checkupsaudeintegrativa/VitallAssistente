@@ -2209,6 +2209,10 @@ function classifyEntrada(recipient: string, rawBody: string): EntradaClassificac
     return { descricao: `PIX recebido de ${shortName}`, categoria: 'PIX RECEBIDO' };
   }
 
+  if (fullText.includes('recebimentos agendados') || fullText.includes('recebíveis') || fullText.includes('recebiveis')) {
+    return { descricao: 'Recebíveis cartão de crédito', categoria: 'RECEBÍVEIS CARTÃO' };
+  }
+
   if (fullText.includes('depósito') || fullText.includes('deposito')) {
     return { descricao: `Depósito recebido`, categoria: 'DEPÓSITO' };
   }
@@ -2343,28 +2347,28 @@ function mapClinicorpPaymentType(type: string): string {
 // ── Sync vendas Clinicorp (API → lancamentos_conta_corrente) ──
 
 async function executeSyncClinicorpPayments(date: string): Promise<string> {
-  let raw;
+  let raw: any;
   try {
-    raw = await clinicorp.listPayments(date, date);
+    raw = await clinicorp.listFinancialSummary(date, date);
   } catch (err: any) {
-    console.error(`[SyncClinicorp] Erro ao buscar pagamentos: ${err.message}`);
+    console.error(`[SyncClinicorp] Erro ao buscar resumo financeiro: ${err.message}`);
     return JSON.stringify({
       error: 'Erro ao acessar Clinicorp',
       mensagem: `Não foi possível acessar o Clinicorp: ${err.message}`,
     });
   }
 
-  const payments = Array.isArray(raw) ? raw : [];
-  // Filtrar pagamentos recebidos e não cancelados
-  const received = payments.filter((p: any) => p.Canceled !== 'X' && p.PaymentReceived === 'X');
+  const allEntries = raw?.values || [];
+  // REVENUE + PATIENT_AP = "Lançamento de Tratamento" (vendas reais)
+  const vendas = allEntries.filter((v: any) => v.PostType === 'REVENUE');
 
-  if (received.length === 0) {
+  if (vendas.length === 0) {
     return JSON.stringify({
       sincronizadas: 0,
       ja_existentes: 0,
       total_pagamentos: 0,
       valor_total: 0,
-      mensagem: `Nenhum pagamento recebido encontrado no Clinicorp para ${date}`,
+      mensagem: `Nenhuma venda (Lançamento de Tratamento) encontrada no Clinicorp para ${date}`,
     });
   }
 
@@ -2373,14 +2377,14 @@ async function executeSyncClinicorpPayments(date: string): Promise<string> {
   let sincronizadas = 0;
   let jaExistentes = 0;
   let valorTotal = 0;
-  const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string }> = [];
+  const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string; contraparte: string }> = [];
 
-  for (const p of received) {
-    const paymentId = String(p.id || p.PaymentHeaderId || '');
-    if (!paymentId) continue;
+  for (const v of vendas) {
+    const entryId = String(v.id || '');
+    if (!entryId) continue;
 
     // Dedup: verificar se já existe lançamento com esse clinicorp ID
-    const marker = `clinicorp:${paymentId}`;
+    const marker = `clinicorp_venda:${entryId}`;
     const { data: existing } = await supabase
       .from('lancamentos_conta_corrente')
       .select('id')
@@ -2392,13 +2396,11 @@ async function executeSyncClinicorpPayments(date: string): Promise<string> {
       continue;
     }
 
-    const patientName = p.PatientName || p.Patient_Name || 'Paciente';
-    const paymentType = p.Type || p.PaymentMethod || p.Payment_Method || '';
-    const amount = Math.abs(Number(p.Amount || p.Value || 0));
+    const patientName = v.PatientName || v.PersonName || 'Paciente';
+    const amount = Math.abs(Number(v.Amount || 0));
     if (amount <= 0) continue;
 
-    const categoria = mapClinicorpPaymentType(paymentType);
-    const descricao = `${paymentType || 'Pagamento'} - ${patientName}`;
+    const descricao = `Lançamento de Tratamento - ${patientName}`;
 
     const row = {
       data: date,
@@ -2407,7 +2409,7 @@ async function executeSyncClinicorpPayments(date: string): Promise<string> {
       descricao,
       contraparte: patientName,
       valor: amount,
-      categoria,
+      categoria: 'TRATAMENTO',
       observacoes: `[${marker}] Importado automaticamente do Clinicorp`,
     };
 
@@ -2418,7 +2420,7 @@ async function executeSyncClinicorpPayments(date: string): Promise<string> {
     if (!error) {
       sincronizadas++;
       valorTotal += amount;
-      lancamentosCriados.push({ descricao, valor: amount, categoria });
+      lancamentosCriados.push({ descricao, valor: amount, categoria: 'TRATAMENTO', contraparte: patientName });
     } else {
       console.error(`[SyncClinicorp] Erro ao inserir lançamento: ${error.message}`);
     }
@@ -2427,7 +2429,7 @@ async function executeSyncClinicorpPayments(date: string): Promise<string> {
   return JSON.stringify({
     sincronizadas,
     ja_existentes: jaExistentes,
-    total_pagamentos: received.length,
+    total_pagamentos: vendas.length,
     valor_total: valorTotal,
     lancamentos_criados: lancamentosCriados,
     mensagem: sincronizadas > 0
