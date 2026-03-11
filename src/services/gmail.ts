@@ -30,6 +30,7 @@ export interface BankTransaction {
   amount: number;
   type: 'entrada' | 'saida';
   description: string;
+  recipient: string;
   emailSubject: string;
   emailMessageId: string;
   rawBody: string;
@@ -82,6 +83,7 @@ export async function fetchC6BankTransactions(dateStr: string): Promise<BankTran
       if (parsed) {
         transactions.push({
           ...parsed,
+          recipient: extractRecipient(body),
           emailSubject: subject,
           emailMessageId: messageId,
           rawBody: body.substring(0, 2000),
@@ -198,6 +200,23 @@ function parseC6BankEmail(
 
   console.log(`[Gmail] ${type.toUpperCase()}: R$ ${amount.toFixed(2)} — ${from}`);
   return { amount, type, description };
+}
+
+/**
+ * Extrai o nome do destinatário do corpo do email C6 Bank.
+ * Ex: "Pix enviado no valor de R$ 350,00, para Marcela Marques Sobral, CPF..." → "Marcela Marques Sobral"
+ * Ex: "Pix enviado no valor de R$ 335,00, para RADIOLOGIC RADIOLOGIA..., CNPJ..." → "RADIOLOGIC RADIOLOGIA..."
+ */
+function extractRecipient(body: string): string {
+  // Padrão saída: "para NOME, CPF/CNPJ..."
+  const paraMatch = body.match(/para\s+([^,]+),\s*(?:CPF|CNPJ)/i);
+  if (paraMatch) return paraMatch[1].trim();
+
+  // Padrão entrada: "de NOME, CPF/CNPJ..." ou "por NOME"
+  const deMatch = body.match(/(?:de|por)\s+([^,]+),\s*(?:CPF|CNPJ)/i);
+  if (deMatch) return deMatch[1].trim();
+
+  return '';
 }
 
 /** Converte string BRL "1.234,56" para número 1234.56 */

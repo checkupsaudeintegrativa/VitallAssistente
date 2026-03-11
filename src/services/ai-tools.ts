@@ -1866,6 +1866,80 @@ async function executeGetContasSummary(
 
 // ── Importação bancária (Gmail / C6 Bank) ──
 
+// ── Classificação inteligente de transações bancárias ──
+
+interface ContaClassificacao {
+  descricao: string;
+  categoria: string;
+  classificacao: string;
+}
+
+/** Mapa de keywords do destinatário → classificação da conta */
+const RECIPIENT_RULES: Array<{ keywords: string[]; result: Omit<ContaClassificacao, 'descricao'> & { descPrefix: string } }> = [
+  // Profissionais (doutoras — custo variável)
+  { keywords: ['marcela'], result: { descPrefix: 'Dra. Marcela', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['maria eduarda'], result: { descPrefix: 'Dra. Maria Eduarda', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['giovanna'], result: { descPrefix: 'Dra. Giovanna', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['victoria', 'victória', 'vitória'], result: { descPrefix: 'Dra. Victória', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['fabiana'], result: { descPrefix: 'Dra. Fabiana', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['rodolfo'], result: { descPrefix: 'Dr. Rodolfo', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  { keywords: ['pedro'], result: { descPrefix: 'Dr. Pedro', categoria: 'PROFISSIONAIS', classificacao: 'Custo Variável' } },
+  // Profissionais (funcionárias — custo fixo)
+  { keywords: ['jessica', 'jéssica'], result: { descPrefix: 'Jéssica', categoria: 'PROFISSIONAIS', classificacao: 'Custo Fixo' } },
+  { keywords: ['thamires'], result: { descPrefix: 'Thamires', categoria: 'PROFISSIONAIS', classificacao: 'Custo Fixo' } },
+  { keywords: ['pamela', 'pâmela'], result: { descPrefix: 'Pâmela', categoria: 'PROFISSIONAIS', classificacao: 'Custo Fixo' } },
+  // Radiologia
+  { keywords: ['radiologic'], result: { descPrefix: 'Radiologic', categoria: 'RADIOLOGIA', classificacao: 'Custo Variável' } },
+  { keywords: ['cedor'], result: { descPrefix: 'Cedor', categoria: 'RADIOLOGIA', classificacao: 'Custo Variável' } },
+  // Laboratório
+  { keywords: ['lisboa'], result: { descPrefix: 'Laboratório Lisboa', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
+  { keywords: ['inova'], result: { descPrefix: 'Laboratório Inova', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
+  { keywords: ['clearcorrect', 'clear correct'], result: { descPrefix: 'ClearCorrect', categoria: 'LABORATÓRIO', classificacao: 'Custo Variável' } },
+  // Dental
+  { keywords: ['dental med'], result: { descPrefix: 'Dental Med Sul', categoria: 'DENTAL', classificacao: 'Custo Variável' } },
+  { keywords: ['dental speed'], result: { descPrefix: 'Dental Speed', categoria: 'DENTAL', classificacao: 'Custo Variável' } },
+  { keywords: ['dental tanaka'], result: { descPrefix: 'Dental Tanaka', categoria: 'DENTAL', classificacao: 'Custo Variável' } },
+  // Componentes / Implantes
+  { keywords: ['wallace'], result: { descPrefix: 'Wallace Componentes', categoria: 'COMPONENTES WALLACE', classificacao: 'Custo Variável' } },
+  // Infraestrutura / Fornecedores
+  { keywords: ['shibata'], result: { descPrefix: 'Shibata', categoria: 'INFRAESTRUTURA', classificacao: 'Custo Variável' } },
+  { keywords: ['alumifran'], result: { descPrefix: 'Alumifran', categoria: 'INFRAESTRUTURA', classificacao: 'Custo Variável' } },
+  { keywords: ['infinitepay', 'infinite pay'], result: { descPrefix: 'Maquininha InfinitePay', categoria: 'INFRAESTRUTURA', classificacao: 'Investimento' } },
+  // Manutenção
+  { keywords: ['mogiteq'], result: { descPrefix: 'Mogiteq', categoria: 'MANUTENÇÃO', classificacao: 'Custo Variável' } },
+  { keywords: ['elkertec'], result: { descPrefix: 'Elkertec', categoria: 'MANUTENÇÃO', classificacao: 'Custo Variável' } },
+  // Marketing
+  { keywords: ['google'], result: { descPrefix: 'Campanha Google', categoria: 'MARKETING', classificacao: 'Custo Fixo' } },
+  // Antecipação de lucros (Dra. Ana = dona)
+  { keywords: ['ana maria'], result: { descPrefix: 'Dra. Ana Maria', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
+];
+
+/** Classifica uma transação bancária baseado no nome do destinatário */
+function classifyTransaction(recipient: string, rawBody: string): ContaClassificacao {
+  const searchText = `${recipient}\n${rawBody}`.toLowerCase();
+
+  for (const rule of RECIPIENT_RULES) {
+    if (rule.keywords.some((kw) => searchText.includes(kw))) {
+      return {
+        descricao: `Pagamento ${rule.result.descPrefix}`,
+        categoria: rule.result.categoria,
+        classificacao: rule.result.classificacao,
+      };
+    }
+  }
+
+  // Fallback: usa o nome do destinatário como descrição
+  const shortRecipient = recipient
+    ? recipient.split(/\s+/).slice(0, 3).join(' ')
+    : 'Transação C6 Bank';
+
+  return {
+    descricao: `Pix para ${shortRecipient}`,
+    categoria: 'BANCO',
+    classificacao: 'Custo Variável',
+  };
+}
+
 async function executeSyncBankTransactions(date: string): Promise<string> {
   if (!gmail.isAvailable()) {
     return JSON.stringify({
@@ -1903,7 +1977,7 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
   let sincronizadas = 0;
   let jaExistentes = 0;
   let valorTotal = 0;
-  const contasCriadas: Array<{ descricao: string; valor: number }> = [];
+  const contasCriadas: Array<{ descricao: string; valor: number; categoria: string }> = [];
 
   for (const tx of saidas) {
     // Dedup: verificar se já existe conta com esse emailMessageId no campo observacoes
@@ -1919,19 +1993,18 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
       continue;
     }
 
-    // Descrição: usa subject se disponível, senão descrição do body
-    const descricao = tx.emailSubject
-      ? tx.emailSubject.substring(0, 200)
-      : tx.description.substring(0, 200);
+    // Classificação inteligente baseada no destinatário
+    const classificacao = classifyTransaction(tx.recipient, tx.rawBody);
 
     const row = {
-      descricao,
+      descricao: classificacao.descricao,
       valor: tx.amount,
       vencimento: date,
       status: 'realizado',
       data_pagamento: date,
       competencia,
-      categoria: 'BANCO',
+      categoria: classificacao.categoria,
+      classificacao: classificacao.classificacao,
       forma_pagamento: 'PIX',
       observacoes: `[${marker}] Importado automaticamente do C6 Bank`,
     };
@@ -1943,7 +2016,7 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
     if (!error) {
       sincronizadas++;
       valorTotal += tx.amount;
-      contasCriadas.push({ descricao, valor: tx.amount });
+      contasCriadas.push({ descricao: classificacao.descricao, valor: tx.amount, categoria: classificacao.categoria });
     } else {
       console.error(`[SyncBank] Erro ao inserir conta: ${error.message}`);
     }
