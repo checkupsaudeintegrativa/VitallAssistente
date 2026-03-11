@@ -37,6 +37,12 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'extrato', 'banco', 'transação', 'transacao', 'transações', 'transacoes',
     'c6', 'c6 bank', 'sincronizar banco', 'sincroniza banco',
     'importar banco', 'saídas do banco', 'saidas do banco',
+    // Conta corrente
+    'entrada', 'entradas', 'venda', 'vendas',
+    'conta corrente', 'lancamento', 'lançamento',
+    'recebimento', 'recebimentos',
+    'importar entradas', 'importar vendas',
+    'sincronizar vendas', 'clinicorp',
   ],
   ponto: [
     'ponto', 'registro de ponto', 'registros de ponto',
@@ -63,7 +69,7 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
   paciente: [
     'foto do paciente', 'foto de paciente', 'foto da paciente',
     'adicionar foto', 'adiciona foto',
-    'clinicorp', 'ficha do clinicorp', 'ficha do paciente',
+    'ficha do clinicorp', 'ficha do paciente',
     'termo', 'termos', 'termo de consentimento', 'consentimento',
     'assinatura', 'escaneado', 'escaneada',
   ],

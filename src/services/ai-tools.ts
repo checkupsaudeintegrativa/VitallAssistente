@@ -23,6 +23,13 @@ const FINANCIAL_TOOLS = new Set([
   'query_contas_pagar', 'create_conta_pagar', 'update_conta_pagar',
   'dar_baixa_conta', 'delete_conta_pagar', 'get_contas_summary',
   'sync_bank_transactions',
+  'sync_bank_entradas',
+  'sync_clinicorp_payments',
+  'query_conta_corrente',
+  'create_lancamento_cc',
+  'update_lancamento_cc',
+  'delete_lancamento_cc',
+  'get_conta_corrente_summary',
 ]);
 
 /** Ferramentas de edição de ponto — somente admin */
@@ -506,6 +513,128 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  // ── Importação de ENTRADAS bancárias (Gmail / C6 Bank) ──
+  {
+    type: 'function',
+    function: {
+      name: 'sync_bank_entradas',
+      description: 'Busca entradas bancárias (PIX recebido, depósitos, créditos) do C6 Bank de uma data no Gmail e insere na conta corrente. Use para "importar entradas do banco", "sincronizar recebimentos", "puxar entradas".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+        },
+        required: ['date'],
+      },
+    },
+  },
+  // ── Importação de vendas Clinicorp ──
+  {
+    type: 'function',
+    function: {
+      name: 'sync_clinicorp_payments',
+      description: 'Busca pagamentos recebidos do Clinicorp (cartão, PIX, dinheiro) de uma data e insere na conta corrente como vendas. Use para "importar vendas do Clinicorp", "sincronizar recebimentos do sistema", "puxar pagamentos".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+        },
+        required: ['date'],
+      },
+    },
+  },
+  // ── Conta Corrente (entradas bancárias + vendas Clinicorp) ──
+  {
+    type: 'function',
+    function: {
+      name: 'query_conta_corrente',
+      description: 'Lista lançamentos da conta corrente (entradas bancárias e vendas) num intervalo de datas. Filtra por tipo (entrada/venda), categoria e contraparte. Use para "quanto entrou hoje", "vendas de ontem", "lançamentos da conta corrente".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD' },
+          tipo: { type: 'string', description: 'Filtrar por tipo: "entrada" (banco/PIX recebido) ou "venda" (Clinicorp). Opcional — sem filtro retorna ambos.' },
+          categoria: { type: 'string', description: 'Filtrar por categoria (ex: "PIX CLINICORP", "CARTÃO CRÉDITO", "DEPÓSITO"). Opcional.' },
+          contraparte: { type: 'string', description: 'Filtrar por contraparte/nome (ex: nome do paciente ou remetente). Opcional.' },
+        },
+        required: ['date_from', 'date_to'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'create_lancamento_cc',
+      description: 'Cria um lançamento manual na conta corrente (entrada ou venda). Use quando o admin pedir para registrar uma entrada ou venda manualmente. Sempre confirme os dados antes de criar.',
+      parameters: {
+        type: 'object',
+        properties: {
+          data: { type: 'string', description: 'Data no formato YYYY-MM-DD' },
+          hora: { type: 'string', description: 'Hora no formato HH:MM (opcional)' },
+          tipo: { type: 'string', description: 'Tipo: "entrada" ou "venda"' },
+          descricao: { type: 'string', description: 'Descrição do lançamento (ex: "PIX recebido de João", "Cartão crédito - Maria")' },
+          contraparte: { type: 'string', description: 'Nome da contraparte (remetente ou paciente). Opcional.' },
+          valor: { type: 'number', description: 'Valor em reais (ex: 500.00)' },
+          categoria: { type: 'string', description: 'Categoria (ex: "PIX", "CARTÃO CRÉDITO", "DINHEIRO", "DEPÓSITO"). Opcional.' },
+          observacoes: { type: 'string', description: 'Observações adicionais. Opcional.' },
+        },
+        required: ['data', 'tipo', 'descricao', 'valor'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'update_lancamento_cc',
+      description: 'Altera um lançamento existente da conta corrente. Sempre confirme as alterações com o usuário.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'UUID do lançamento' },
+          data: { type: 'string', description: 'Nova data YYYY-MM-DD. Opcional.' },
+          hora: { type: 'string', description: 'Nova hora HH:MM. Opcional.' },
+          tipo: { type: 'string', description: 'Novo tipo: "entrada" ou "venda". Opcional.' },
+          descricao: { type: 'string', description: 'Nova descrição. Opcional.' },
+          contraparte: { type: 'string', description: 'Nova contraparte. Opcional.' },
+          valor: { type: 'number', description: 'Novo valor. Opcional.' },
+          categoria: { type: 'string', description: 'Nova categoria. Opcional.' },
+          observacoes: { type: 'string', description: 'Novas observações. Opcional.' },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'delete_lancamento_cc',
+      description: 'Exclui um lançamento da conta corrente. Sempre confirme com o usuário antes de excluir.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'UUID do lançamento' },
+        },
+        required: ['id'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_conta_corrente_summary',
+      description: 'Gera resumo da conta corrente num período, agrupado por tipo, categoria ou contraparte. Mostra totais separados de entradas vs vendas. Use para "resumo da conta corrente", "quanto entrou e quanto vendeu esse mês", "receita total do mês".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD' },
+          agrupar_por: { type: 'string', description: 'Agrupar por: "tipo" (default — entradas vs vendas), "categoria" ou "contraparte"' },
+        },
+        required: ['date_from', 'date_to'],
+      },
+    },
+  },
 ];
 
 // ── Tool Executors ──
@@ -897,6 +1026,28 @@ export async function executeTool(name: string, args: Record<string, any>, user?
 
       case 'sync_bank_transactions':
         return executeSyncBankTransactions(args.date);
+
+      case 'sync_bank_entradas':
+        return executeSyncBankEntradas(args.date);
+
+      case 'sync_clinicorp_payments':
+        return executeSyncClinicorpPayments(args.date);
+
+      // ── Conta Corrente ──
+      case 'query_conta_corrente':
+        return executeQueryContaCorrente(args.date_from, args.date_to, args.tipo, args.categoria, args.contraparte);
+
+      case 'create_lancamento_cc':
+        return executeCreateLancamentoCC(args);
+
+      case 'update_lancamento_cc':
+        return executeUpdateLancamentoCC(args);
+
+      case 'delete_lancamento_cc':
+        return executeDeleteLancamentoCC(args.id);
+
+      case 'get_conta_corrente_summary':
+        return executeGetContaCorrenteSummary(args.date_from, args.date_to, args.agrupar_por);
 
       default:
         return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
@@ -2038,5 +2189,461 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
       : jaExistentes > 0
         ? `Todas as ${jaExistentes} saída(s) já foram importadas anteriormente`
         : 'Nenhuma conta criada',
+  });
+}
+
+// ── Classificação de entradas bancárias ──
+
+interface EntradaClassificacao {
+  descricao: string;
+  categoria: string;
+}
+
+function classifyEntrada(recipient: string, rawBody: string): EntradaClassificacao {
+  const fullText = `${recipient}\n${rawBody}`.toLowerCase();
+
+  if (fullText.includes('pix recebido') || fullText.includes('recebid')) {
+    const shortName = recipient
+      ? recipient.split(/\s+/).slice(0, 3).join(' ')
+      : 'N/I';
+    return { descricao: `PIX recebido de ${shortName}`, categoria: 'PIX RECEBIDO' };
+  }
+
+  if (fullText.includes('depósito') || fullText.includes('deposito')) {
+    return { descricao: `Depósito recebido`, categoria: 'DEPÓSITO' };
+  }
+
+  if (fullText.includes('crédito') || fullText.includes('credito')) {
+    return { descricao: `Crédito recebido`, categoria: 'CRÉDITO' };
+  }
+
+  const shortName = recipient
+    ? recipient.split(/\s+/).slice(0, 3).join(' ')
+    : 'N/I';
+  return { descricao: `Entrada bancária de ${shortName}`, categoria: 'BANCO' };
+}
+
+// ── Sync entradas bancárias (Gmail → lancamentos_conta_corrente) ──
+
+async function executeSyncBankEntradas(date: string): Promise<string> {
+  if (!gmail.isAvailable()) {
+    return JSON.stringify({
+      error: 'Gmail não configurado',
+      mensagem: 'As credenciais do Gmail (GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN) não estão configuradas.',
+    });
+  }
+
+  let transactions;
+  try {
+    transactions = await gmail.fetchC6BankTransactions(date);
+  } catch (err: any) {
+    console.error(`[SyncBankEntradas] Erro ao buscar emails do Gmail: ${err.message}`);
+    return JSON.stringify({
+      error: 'Erro ao acessar Gmail',
+      mensagem: `Não foi possível acessar o Gmail: ${err.message}. Verifique se as credenciais estão corretas.`,
+    });
+  }
+
+  const entradas = transactions.filter((t) => t.type === 'entrada');
+
+  if (entradas.length === 0) {
+    return JSON.stringify({
+      sincronizadas: 0,
+      ja_existentes: 0,
+      total_entradas: 0,
+      valor_total: 0,
+      mensagem: `Nenhuma entrada bancária encontrada para ${date}`,
+    });
+  }
+
+  const { supabase } = await import('./supabase');
+
+  let sincronizadas = 0;
+  let jaExistentes = 0;
+  let valorTotal = 0;
+  const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string }> = [];
+
+  for (const tx of entradas) {
+    // Dedup: verificar se já existe lançamento com esse emailMessageId
+    const marker = `gmail:${tx.emailMessageId}`;
+    const { data: existing } = await supabase
+      .from('lancamentos_conta_corrente')
+      .select('id')
+      .ilike('observacoes', `%${marker}%`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      jaExistentes++;
+      continue;
+    }
+
+    const classificacao = classifyEntrada(tx.recipient, tx.rawBody);
+
+    const row = {
+      data: date,
+      hora: null,
+      tipo: 'entrada',
+      descricao: classificacao.descricao,
+      contraparte: tx.recipient || null,
+      valor: tx.amount,
+      categoria: classificacao.categoria,
+      observacoes: `[${marker}] Importado automaticamente do C6 Bank`,
+    };
+
+    const { error } = await supabase
+      .from('lancamentos_conta_corrente')
+      .insert(row);
+
+    if (!error) {
+      sincronizadas++;
+      valorTotal += tx.amount;
+      lancamentosCriados.push({ descricao: classificacao.descricao, valor: tx.amount, categoria: classificacao.categoria });
+    } else {
+      console.error(`[SyncBankEntradas] Erro ao inserir lançamento: ${error.message}`);
+    }
+  }
+
+  return JSON.stringify({
+    sincronizadas,
+    ja_existentes: jaExistentes,
+    total_entradas: entradas.length,
+    valor_total: valorTotal,
+    lancamentos_criados: lancamentosCriados,
+    mensagem: sincronizadas > 0
+      ? `${sincronizadas} entrada(s) importada(s) totalizando R$ ${valorTotal.toFixed(2)}`
+      : jaExistentes > 0
+        ? `Todas as ${jaExistentes} entrada(s) já foram importadas anteriormente`
+        : 'Nenhuma entrada importada',
+  });
+}
+
+// ── Mapeamento de tipo de pagamento Clinicorp ──
+
+function mapClinicorpPaymentType(type: string): string {
+  if (!type) return 'OUTROS';
+  const lower = type.toLowerCase();
+
+  if (lower.includes('credit') || lower.includes('crédito') || lower.includes('credito')) {
+    if (lower.includes('debit') || lower.includes('débito') || lower.includes('debito')) {
+      return 'CARTÃO DÉBITO';
+    }
+    return 'CARTÃO CRÉDITO';
+  }
+  if (lower.includes('debit') || lower.includes('débito') || lower.includes('debito')) {
+    return 'CARTÃO DÉBITO';
+  }
+  if (lower.includes('pix')) return 'PIX CLINICORP';
+  if (lower.includes('cash') || lower.includes('dinheiro') || lower.includes('espécie')) return 'DINHEIRO';
+  if (lower.includes('boleto')) return 'BOLETO';
+  if (lower.includes('transfer') || lower.includes('transferência')) return 'TRANSFERÊNCIA';
+
+  return type.toUpperCase();
+}
+
+// ── Sync vendas Clinicorp (API → lancamentos_conta_corrente) ──
+
+async function executeSyncClinicorpPayments(date: string): Promise<string> {
+  let raw;
+  try {
+    raw = await clinicorp.listPayments(date, date);
+  } catch (err: any) {
+    console.error(`[SyncClinicorp] Erro ao buscar pagamentos: ${err.message}`);
+    return JSON.stringify({
+      error: 'Erro ao acessar Clinicorp',
+      mensagem: `Não foi possível acessar o Clinicorp: ${err.message}`,
+    });
+  }
+
+  const payments = Array.isArray(raw) ? raw : [];
+  // Filtrar pagamentos recebidos e não cancelados
+  const received = payments.filter((p: any) => p.Canceled !== 'X' && p.PaymentReceived === 'X');
+
+  if (received.length === 0) {
+    return JSON.stringify({
+      sincronizadas: 0,
+      ja_existentes: 0,
+      total_pagamentos: 0,
+      valor_total: 0,
+      mensagem: `Nenhum pagamento recebido encontrado no Clinicorp para ${date}`,
+    });
+  }
+
+  const { supabase } = await import('./supabase');
+
+  let sincronizadas = 0;
+  let jaExistentes = 0;
+  let valorTotal = 0;
+  const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string }> = [];
+
+  for (const p of received) {
+    const paymentId = String(p.id || p.PaymentHeaderId || '');
+    if (!paymentId) continue;
+
+    // Dedup: verificar se já existe lançamento com esse clinicorp ID
+    const marker = `clinicorp:${paymentId}`;
+    const { data: existing } = await supabase
+      .from('lancamentos_conta_corrente')
+      .select('id')
+      .ilike('observacoes', `%${marker}%`)
+      .limit(1);
+
+    if (existing && existing.length > 0) {
+      jaExistentes++;
+      continue;
+    }
+
+    const patientName = p.PatientName || p.Patient_Name || 'Paciente';
+    const paymentType = p.Type || p.PaymentMethod || p.Payment_Method || '';
+    const amount = Math.abs(Number(p.Amount || p.Value || 0));
+    if (amount <= 0) continue;
+
+    const categoria = mapClinicorpPaymentType(paymentType);
+    const descricao = `${paymentType || 'Pagamento'} - ${patientName}`;
+
+    const row = {
+      data: date,
+      hora: null,
+      tipo: 'venda',
+      descricao,
+      contraparte: patientName,
+      valor: amount,
+      categoria,
+      observacoes: `[${marker}] Importado automaticamente do Clinicorp`,
+    };
+
+    const { error } = await supabase
+      .from('lancamentos_conta_corrente')
+      .insert(row);
+
+    if (!error) {
+      sincronizadas++;
+      valorTotal += amount;
+      lancamentosCriados.push({ descricao, valor: amount, categoria });
+    } else {
+      console.error(`[SyncClinicorp] Erro ao inserir lançamento: ${error.message}`);
+    }
+  }
+
+  return JSON.stringify({
+    sincronizadas,
+    ja_existentes: jaExistentes,
+    total_pagamentos: received.length,
+    valor_total: valorTotal,
+    lancamentos_criados: lancamentosCriados,
+    mensagem: sincronizadas > 0
+      ? `${sincronizadas} venda(s) importada(s) do Clinicorp totalizando R$ ${valorTotal.toFixed(2)}`
+      : jaExistentes > 0
+        ? `Todas as ${jaExistentes} venda(s) já foram importadas anteriormente`
+        : 'Nenhuma venda importada',
+  });
+}
+
+// ── Conta Corrente CRUD ──
+
+async function executeQueryContaCorrente(
+  dateFrom: string,
+  dateTo: string,
+  tipo?: string,
+  categoria?: string,
+  contraparte?: string,
+): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  let query = supabase
+    .from('lancamentos_conta_corrente')
+    .select('id, data, hora, tipo, descricao, contraparte, valor, categoria, observacoes')
+    .gte('data', dateFrom)
+    .lte('data', dateTo)
+    .order('data', { ascending: true })
+    .limit(50);
+
+  if (tipo) {
+    query = query.eq('tipo', tipo);
+  }
+  if (categoria) {
+    query = query.ilike('categoria', `%${categoria}%`);
+  }
+  if (contraparte) {
+    query = query.ilike('contraparte', `%${contraparte}%`);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    return JSON.stringify({ error: `Erro ao consultar conta corrente: ${error.message}` });
+  }
+
+  const lancamentos = data || [];
+  const valorTotal = lancamentos.reduce((sum: number, l: any) => sum + (l.valor || 0), 0);
+
+  return JSON.stringify({
+    total: lancamentos.length,
+    valor_total: valorTotal,
+    lancamentos: lancamentos.map((l: any) => ({
+      id: l.id,
+      data: l.data,
+      tipo: l.tipo,
+      descricao: l.descricao,
+      contraparte: l.contraparte || '',
+      valor: l.valor,
+      categoria: l.categoria || '',
+    })),
+  });
+}
+
+async function executeCreateLancamentoCC(args: Record<string, any>): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const row: Record<string, any> = {
+    data: args.data,
+    tipo: args.tipo,
+    descricao: args.descricao,
+    valor: args.valor,
+  };
+  if (args.hora) row.hora = args.hora;
+  if (args.contraparte) row.contraparte = args.contraparte;
+  if (args.categoria) row.categoria = args.categoria;
+  if (args.observacoes) row.observacoes = args.observacoes;
+
+  const { data, error } = await supabase
+    .from('lancamentos_conta_corrente')
+    .insert(row)
+    .select()
+    .single();
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao criar lançamento: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    lancamento: {
+      id: data.id,
+      data: data.data,
+      tipo: data.tipo,
+      descricao: data.descricao,
+      valor: data.valor,
+      categoria: data.categoria || '',
+    },
+    mensagem: `Lançamento criado: "${data.descricao}" - R$ ${data.valor.toFixed(2)} em ${data.data}`,
+  });
+}
+
+async function executeUpdateLancamentoCC(args: Record<string, any>): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const { id, ...fields } = args;
+  const updates: Record<string, any> = {};
+  for (const [key, val] of Object.entries(fields)) {
+    if (val !== undefined && val !== null) updates[key] = val;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return JSON.stringify({ error: 'Nenhum campo para atualizar informado' });
+  }
+
+  const { data, error } = await supabase
+    .from('lancamentos_conta_corrente')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao atualizar lançamento: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    lancamento: {
+      id: data.id,
+      data: data.data,
+      tipo: data.tipo,
+      descricao: data.descricao,
+      valor: data.valor,
+      categoria: data.categoria || '',
+    },
+    mensagem: `Lançamento "${data.descricao}" atualizado com sucesso`,
+  });
+}
+
+async function executeDeleteLancamentoCC(id: string): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const { data: lancamento } = await supabase
+    .from('lancamentos_conta_corrente')
+    .select('id, descricao, valor')
+    .eq('id', id)
+    .single();
+
+  const { error } = await supabase
+    .from('lancamentos_conta_corrente')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao excluir lançamento: ${error.message}` });
+  }
+
+  return JSON.stringify({
+    sucesso: true,
+    id,
+    mensagem: lancamento
+      ? `Lançamento "${lancamento.descricao}" (R$ ${lancamento.valor.toFixed(2)}) excluído`
+      : `Lançamento ${id} excluído`,
+  });
+}
+
+async function executeGetContaCorrenteSummary(
+  dateFrom: string,
+  dateTo: string,
+  agruparPor?: string,
+): Promise<string> {
+  const { supabase } = await import('./supabase');
+
+  const groupField = agruparPor === 'categoria' ? 'categoria'
+    : agruparPor === 'contraparte' ? 'contraparte'
+    : 'tipo';
+
+  const { data, error } = await supabase
+    .from('lancamentos_conta_corrente')
+    .select('valor, tipo, categoria, contraparte')
+    .gte('data', dateFrom)
+    .lte('data', dateTo);
+
+  if (error) {
+    return JSON.stringify({ error: `Erro ao gerar resumo: ${error.message}` });
+  }
+
+  const lancamentos = data || [];
+  let totalGeral = 0;
+  let totalEntradas = 0;
+  let totalVendas = 0;
+
+  const grupoMap: Record<string, { total: number; quantidade: number }> = {};
+
+  for (const l of lancamentos) {
+    const valor = l.valor || 0;
+    totalGeral += valor;
+    if (l.tipo === 'entrada') totalEntradas += valor;
+    if (l.tipo === 'venda') totalVendas += valor;
+
+    const grupoKey = (l[groupField as keyof typeof l] as string) || 'Sem classificação';
+    if (!grupoMap[grupoKey]) grupoMap[grupoKey] = { total: 0, quantidade: 0 };
+    grupoMap[grupoKey].total += valor;
+    grupoMap[grupoKey].quantidade++;
+  }
+
+  const grupos = Object.entries(grupoMap)
+    .map(([nome, info]) => ({ nome, total: info.total, quantidade: info.quantidade }))
+    .sort((a, b) => b.total - a.total);
+
+  return JSON.stringify({
+    periodo: `${dateFrom} a ${dateTo}`,
+    total_lancamentos: lancamentos.length,
+    total_geral: totalGeral,
+    total_entradas: totalEntradas,
+    total_vendas: totalVendas,
+    agrupado_por: groupField,
+    grupos,
   });
 }
