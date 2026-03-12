@@ -289,12 +289,12 @@ export function startScheduler(): void {
     }
   });
 
-  // Auto-importação de saídas bancárias C6 Bank — a cada 10 min, seg-sáb, 8h-20h BRT (11h-23h UTC)
+  // Auto-importação de saídas bancárias C6 Bank — a cada 2 min, 24/7
   if (gmail.isAvailable()) {
     cron.schedule('*/2 * * * *', async () => {
       try {
         const today = new Date();
-        const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
+        const brtDate = new Date(today.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
         const dateStr = brtDate.toISOString().split('T')[0];
 
         // Usa executeTool como admin para processar
@@ -312,13 +312,13 @@ export function startScheduler(): void {
       }
     });
 
-    console.log('  - */2 * * * *: Auto-importação C6 Bank saídas (a cada 2 min, 24h)');
+    console.log('  - */2 * * * *: Auto-importação C6 Bank saídas (a cada 2 min, 24/7)');
 
-    // Auto-importação de ENTRADAS bancárias C6 Bank — a cada 2 min
+    // Auto-importação de ENTRADAS bancárias C6 Bank — a cada 2 min, 24/7
     cron.schedule('*/2 * * * *', async () => {
       try {
         const today = new Date();
-        const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
+        const brtDate = new Date(today.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
         const dateStr = brtDate.toISOString().split('T')[0];
 
         const result = await executeTool('sync_bank_entradas', { date: dateStr }, { name: 'Sistema', role: 'admin', phones: [], features: {} } as any);
@@ -334,14 +334,14 @@ export function startScheduler(): void {
       }
     });
 
-    console.log('  - */2 * * * *: Auto-importação C6 Bank entradas (a cada 2 min, 24h)');
+    console.log('  - */2 * * * *: Auto-importação C6 Bank entradas (a cada 2 min, 24/7)');
   }
 
-  // Auto-importação de vendas Clinicorp — a cada 2 min
+  // Auto-importação de vendas Clinicorp — a cada 2 min, 24/7
   cron.schedule('*/2 * * * *', async () => {
     try {
       const today = new Date();
-      const brtDate = new Date(today.getTime() - 3 * 60 * 60 * 1000);
+      const brtDate = new Date(today.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
       const dateStr = brtDate.toISOString().split('T')[0];
 
       const result = await executeTool('sync_clinicorp_payments', { date: dateStr }, { name: 'Sistema', role: 'admin', phones: [], features: {} } as any);
@@ -365,5 +365,5 @@ export function startScheduler(): void {
   console.log('  - */2 * * * *: Lembretes do Google Calendar (a cada 2 min)');
   console.log('  - 10:30/20:00 UTC (7h30/17h BRT): Digest de lembretes pendentes');
   console.log('  - 11:00 UTC (08:00 BRT): Relatório de ponto semanal (segunda-feira)');
-  console.log('  - */2 * * * *: Auto-importação vendas Clinicorp (a cada 2 min, 24h)');
+  console.log('  - */2 * * * *: Auto-importação vendas Clinicorp (a cada 2 min, 24/7)');
 }

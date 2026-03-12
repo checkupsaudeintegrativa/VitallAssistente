@@ -696,8 +696,49 @@ function formatTime(time: string): string {
   return `${h}h${m}`;
 }
 
+/** Retorna data/hora atual em BRT como Date (use apenas para .toISOString().split('T')[0] ou display) */
 function getBrtNow(): Date {
   return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+}
+
+/** Retorna a data atual em BRT no formato YYYY-MM-DD (método mais seguro) */
+function getBrtDateStr(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+/** Valida que um valor monetário é finito e positivo */
+function validateValor(valor: any): string | null {
+  if (valor === undefined || valor === null) return 'Valor é obrigatório';
+  const n = Number(valor);
+  if (!Number.isFinite(n)) return 'Valor inválido (não é um número)';
+  if (n <= 0) return 'Valor deve ser positivo';
+  return null;
+}
+
+/** Valida formato de data YYYY-MM-DD */
+function validateDateStr(dateStr: any): string | null {
+  if (!dateStr || typeof dateStr !== 'string') return 'Data é obrigatória';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return `Data "${dateStr}" não está no formato YYYY-MM-DD`;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) {
+    return `Data "${dateStr}" é inválida`;
+  }
+  return null;
+}
+
+/** Valida tipo de lançamento da conta corrente */
+const TIPOS_VALIDOS_CC = new Set(['entrada', 'venda']);
+
+/** Arredonda valor monetário para 2 casas decimais */
+function roundMoney(val: number): number {
+  return Math.round(val * 100) / 100;
+}
+
+/** Safe toFixed que lida com valores potencialmente undefined */
+function safeToFixed(val: any, decimals = 2): string {
+  const n = Number(val);
+  return Number.isFinite(n) ? n.toFixed(decimals) : '0.00';
 }
 
 /** Resolve qual GoogleCalendarConfig usar. Se targetCalendar for informado, busca em crossCalendars. */
@@ -820,7 +861,14 @@ export function getToolsForUser(user?: UserConfig | null): ToolDefinition[] {
 /** Retorna toolDefinitions filtradas por uma lista de nomes */
 export function getToolsByNames(names: string[]): ToolDefinition[] {
   const nameSet = new Set(names);
-  return toolDefinitions.filter((t) => nameSet.has(t.function.name));
+  const found = toolDefinitions.filter((t) => nameSet.has(t.function.name));
+  const foundNames = new Set(found.map((t) => t.function.name));
+  for (const name of names) {
+    if (!foundNames.has(name)) {
+      console.warn(`[AI-Tools] Tool "${name}" listada no agente mas não encontrada nas definições`);
+    }
+  }
+  return found;
 }
 
 /**
@@ -915,16 +963,16 @@ export function adaptCalendarTools(tools: ToolDefinition[], user?: UserConfig | 
 
 /** Executa uma ferramenta pelo nome e argumentos, retorna string JSON com resultado */
 export async function executeTool(name: string, args: Record<string, any>, user?: UserConfig | null): Promise<string> {
-  // Guard: staff não pode usar ferramentas financeiras
-  if (user && user.role !== 'admin' && FINANCIAL_TOOLS.has(name)) {
+  // Guard: apenas admin pode usar ferramentas financeiras (bloqueia se user ausente ou não-admin)
+  if (FINANCIAL_TOOLS.has(name) && (!user || user.role !== 'admin')) {
     return JSON.stringify({
       error: 'Sem permissão',
       mensagem: `Você não tem acesso a informações financeiras. Fale com o Arthur ou a Dra. Ana para consultas financeiras.`,
     });
   }
 
-  // Guard: staff não pode editar registros de ponto
-  if (user && user.role !== 'admin' && PONTO_EDIT_TOOLS.has(name)) {
+  // Guard: apenas admin pode editar registros de ponto
+  if (PONTO_EDIT_TOOLS.has(name) && (!user || user.role !== 'admin')) {
     return JSON.stringify({
       error: 'Sem permissão',
       mensagem: `Você não tem permissão para editar registros de ponto. Fale com a Dra. Ana.`,
@@ -1054,25 +1102,24 @@ export async function executeTool(name: string, args: Record<string, any>, user?
     }
   } catch (error: any) {
     console.error(`[AI-Tools] Erro ao executar ${name}:`, error.message);
-    return JSON.stringify({ error: `Erro ao executar ${name}: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao executar a operação. Tente novamente ou entre em contato com o suporte.` });
   }
 }
 
 // ── Individual executors ──
 
 function executeGetCurrentDatetime(): string {
-  const now = new Date();
-  const brt = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+  const brt = getBrtNow();
   const pad = (n: number) => n.toString().padStart(2, '0');
-  const date = `${brt.getUTCFullYear()}-${pad(brt.getUTCMonth() + 1)}-${pad(brt.getUTCDate())}`;
-  const time = `${pad(brt.getUTCHours())}:${pad(brt.getUTCMinutes())}`;
+  const date = `${brt.getFullYear()}-${pad(brt.getMonth() + 1)}-${pad(brt.getDate())}`;
+  const time = `${pad(brt.getHours())}:${pad(brt.getMinutes())}`;
   const weekdays = ['domingo', 'segunda-feira', 'terça-feira', 'quarta-feira', 'quinta-feira', 'sexta-feira', 'sábado'];
 
   return JSON.stringify({
     agora_iso: `${date}T${time}:00-03:00`,
     date,
     time,
-    weekday: weekdays[brt.getUTCDay()],
+    weekday: weekdays[brt.getDay()],
   });
 }
 
@@ -1153,7 +1200,9 @@ async function executeGetAgendaDetail(date: string, dentistName?: string): Promi
 
 async function executeQueryPayments(dateFrom: string, dateTo: string): Promise<string> {
   const raw = await clinicorp.listPayments(dateFrom, dateTo);
-  const payments = Array.isArray(raw) ? raw : [];
+  const allPayments = Array.isArray(raw) ? raw : [];
+  // Filtrar pagamentos cancelados
+  const payments = allPayments.filter((p: any) => p.Canceled !== 'X');
 
   let totalValue = 0;
   const summary = payments.map((p: any) => {
@@ -1784,6 +1833,12 @@ async function executeQueryContasPagar(
   categoria?: string,
   classificacao?: string,
 ): Promise<string> {
+  // V5: Validação de datas
+  const errFrom = validateDateStr(dateFrom);
+  const errTo = validateDateStr(dateTo);
+  if (errFrom) return JSON.stringify({ error: `date_from: ${errFrom}` });
+  if (errTo) return JSON.stringify({ error: `date_to: ${errTo}` });
+
   const { supabase } = await import('./supabase');
 
   let query = supabase
@@ -1792,7 +1847,7 @@ async function executeQueryContasPagar(
     .gte('vencimento', dateFrom)
     .lte('vencimento', dateTo)
     .order('vencimento', { ascending: true })
-    .limit(50);
+    .limit(200);
 
   if (status && status !== 'todos') {
     query = query.eq('status', status);
@@ -1806,15 +1861,17 @@ async function executeQueryContasPagar(
 
   const { data, error } = await query;
   if (error) {
-    return JSON.stringify({ error: `Erro ao consultar contas a pagar: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao consultar contas a pagar` });
   }
 
   const contas = data || [];
-  const valorTotal = contas.reduce((sum: number, c: any) => sum + (c.valor || 0), 0);
+  // V11: usar roundMoney para precisão
+  const valorTotal = roundMoney(contas.reduce((sum: number, c: any) => sum + (c.valor || 0), 0));
 
   return JSON.stringify({
     total: contas.length,
     valor_total: valorTotal,
+    aviso: contas.length >= 200 ? 'Limite de 200 registros atingido. Use filtros mais específicos.' : undefined,
     contas: contas.map((c: any) => ({
       id: c.id,
       descricao: c.descricao,
@@ -1828,13 +1885,26 @@ async function executeQueryContasPagar(
 }
 
 async function executeCreateContaPagar(args: Record<string, any>): Promise<string> {
+  // V4: Validação monetária
+  const valorErr = validateValor(args.valor);
+  if (valorErr) return JSON.stringify({ error: valorErr });
+
+  // V5: Validação de data
+  const dateErr = validateDateStr(args.vencimento);
+  if (dateErr) return JSON.stringify({ error: `vencimento: ${dateErr}` });
+
+  if (!args.descricao || typeof args.descricao !== 'string' || !args.descricao.trim()) {
+    return JSON.stringify({ error: 'Descrição é obrigatória' });
+  }
+
   const { supabase } = await import('./supabase');
 
+  // V16: competencia default = mês do vencimento (mantém mas documenta)
   const competencia = args.competencia || (args.vencimento ? args.vencimento.substring(0, 7) : undefined);
 
   const row: Record<string, any> = {
-    descricao: args.descricao,
-    valor: args.valor,
+    descricao: args.descricao.trim(),
+    valor: roundMoney(Number(args.valor)),
     vencimento: args.vencimento,
     status: 'aberto',
   };
@@ -1852,7 +1922,7 @@ async function executeCreateContaPagar(args: Record<string, any>): Promise<strin
     .single();
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao criar conta a pagar: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao criar conta a pagar` });
   }
 
   return JSON.stringify({
@@ -1865,7 +1935,7 @@ async function executeCreateContaPagar(args: Record<string, any>): Promise<strin
       status: data.status,
       categoria: data.categoria || '',
     },
-    mensagem: `Conta criada: "${data.descricao}" - R$ ${data.valor.toFixed(2)} vencimento ${data.vencimento}`,
+    mensagem: `Conta criada: "${data.descricao}" - R$ ${safeToFixed(data.valor)} vencimento ${data.vencimento}`,
   });
 }
 
@@ -1873,14 +1943,30 @@ async function executeUpdateContaPagar(args: Record<string, any>): Promise<strin
   const { supabase } = await import('./supabase');
 
   const { id, ...fields } = args;
-  // Remove campos undefined
+
+  // V6: Campos protegidos - não podem ser alterados via update direto
+  const PROTECTED_FIELDS = new Set(['status', 'data_pagamento', 'id', 'created_at', 'updated_at']);
+
   const updates: Record<string, any> = {};
   for (const [key, val] of Object.entries(fields)) {
-    if (val !== undefined && val !== null) updates[key] = val;
+    if (val !== undefined && val !== null && !PROTECTED_FIELDS.has(key)) updates[key] = val;
+  }
+
+  // V4: Validar valor se estiver sendo atualizado
+  if (updates.valor !== undefined) {
+    const valorErr = validateValor(updates.valor);
+    if (valorErr) return JSON.stringify({ error: valorErr });
+    updates.valor = roundMoney(Number(updates.valor));
+  }
+
+  // V5: Validar vencimento se estiver sendo atualizado
+  if (updates.vencimento !== undefined) {
+    const dateErr = validateDateStr(updates.vencimento);
+    if (dateErr) return JSON.stringify({ error: `vencimento: ${dateErr}` });
   }
 
   if (Object.keys(updates).length === 0) {
-    return JSON.stringify({ error: 'Nenhum campo para atualizar informado' });
+    return JSON.stringify({ error: 'Nenhum campo para atualizar informado (status e data_pagamento devem ser alterados via dar_baixa)' });
   }
 
   const { data, error } = await supabase
@@ -1891,7 +1977,7 @@ async function executeUpdateContaPagar(args: Record<string, any>): Promise<strin
     .single();
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao atualizar conta: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao atualizar conta` });
   }
 
   return JSON.stringify({
@@ -1911,52 +1997,91 @@ async function executeUpdateContaPagar(args: Record<string, any>): Promise<strin
 async function executeDarBaixaConta(id: string, dataPagamento?: string): Promise<string> {
   const { supabase } = await import('./supabase');
 
-  const hoje = getBrtNow().toISOString().split('T')[0];
+  // V10: Verificar se a conta existe e se já está paga
+  const { data: conta, error: fetchErr } = await supabase
+    .from('contas_pagar')
+    .select('id, descricao, valor, status')
+    .eq('id', id)
+    .single();
+
+  if (fetchErr || !conta) {
+    return JSON.stringify({ error: `Conta não encontrada com o ID informado` });
+  }
+
+  if (conta.status === 'realizado') {
+    return JSON.stringify({
+      error: 'Conta já paga',
+      mensagem: `A conta "${conta.descricao}" (R$ ${safeToFixed(conta.valor)}) já está marcada como paga.`,
+    });
+  }
+
+  const hoje = getBrtDateStr();
   const dataPgto = dataPagamento || hoje;
+
+  // V5: Validar data se informada
+  if (dataPagamento) {
+    const dateErr = validateDateStr(dataPagamento);
+    if (dateErr) return JSON.stringify({ error: `data_pagamento: ${dateErr}` });
+  }
 
   const { data, error } = await supabase
     .from('contas_pagar')
     .update({ status: 'realizado', data_pagamento: dataPgto })
     .eq('id', id)
+    .eq('status', 'aberto') // Double check: só atualiza se ainda estiver aberto
     .select('id, descricao, valor')
     .single();
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao dar baixa: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao dar baixa` });
   }
 
   return JSON.stringify({
     sucesso: true,
     id: data.id,
-    mensagem: `Conta "${data.descricao}" (R$ ${data.valor.toFixed(2)}) marcada como paga em ${dataPgto}`,
+    mensagem: `Conta "${data.descricao}" (R$ ${safeToFixed(data.valor)}) marcada como paga em ${dataPgto}`,
   });
 }
 
 async function executeDeleteContaPagar(id: string): Promise<string> {
   const { supabase } = await import('./supabase');
 
-  // Buscar a conta antes de excluir para retornar info
-  const { data: conta } = await supabase
+  // V9: Verificar se a conta existe antes de excluir
+  const { data: conta, error: fetchErr } = await supabase
     .from('contas_pagar')
-    .select('id, descricao, valor')
+    .select('id, descricao, valor, status')
     .eq('id', id)
     .single();
 
+  if (fetchErr || !conta) {
+    return JSON.stringify({ error: `Conta não encontrada com o ID "${id}"` });
+  }
+
+  // V17: Soft-delete — marca como excluído com timestamp em vez de deletar permanentemente
   const { error } = await supabase
     .from('contas_pagar')
-    .delete()
+    .update({
+      status: 'excluido',
+      observacoes: `${conta.status === 'realizado' ? '[PAGO] ' : ''}Excluído em ${getBrtDateStr()} | ${(conta as any).observacoes || ''}`.trim(),
+    })
     .eq('id', id);
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao excluir conta: ${error.message}` });
+    // Fallback: se soft-delete falhar (ex: constraint), tentar hard delete
+    const { error: delErr } = await supabase
+      .from('contas_pagar')
+      .delete()
+      .eq('id', id);
+
+    if (delErr) {
+      return JSON.stringify({ error: `Erro ao excluir conta` });
+    }
   }
 
   return JSON.stringify({
     sucesso: true,
     id,
-    mensagem: conta
-      ? `Conta "${conta.descricao}" (R$ ${conta.valor.toFixed(2)}) excluída`
-      : `Conta ${id} excluída`,
+    mensagem: `Conta "${conta.descricao}" (R$ ${safeToFixed(conta.valor)}) excluída`,
   });
 }
 
@@ -1978,7 +2103,7 @@ async function executeGetContasSummary(
     .lte('vencimento', dateTo);
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao gerar resumo: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao gerar resumo` });
   }
 
   const contas = data || [];
@@ -2000,16 +2125,17 @@ async function executeGetContasSummary(
     grupoMap[grupoKey].quantidade++;
   }
 
+  // V11: Arredondar totais para precisão monetária
   const grupos = Object.entries(grupoMap)
-    .map(([nome, info]) => ({ nome, total: info.total, quantidade: info.quantidade }))
+    .map(([nome, info]) => ({ nome, total: roundMoney(info.total), quantidade: info.quantidade }))
     .sort((a, b) => b.total - a.total);
 
   return JSON.stringify({
     periodo: `${dateFrom} a ${dateTo}`,
     total_contas: contas.length,
-    total_geral: totalGeral,
-    total_aberto: totalAberto,
-    total_realizado: totalRealizado,
+    total_geral: roundMoney(totalGeral),
+    total_aberto: roundMoney(totalAberto),
+    total_realizado: roundMoney(totalRealizado),
     agrupado_por: groupField,
     grupos,
   });
@@ -2069,6 +2195,16 @@ const RECIPIENT_RULES: Array<{ keywords: string[]; result: Omit<ContaClassificac
   { keywords: ['arthur gabriel'], result: { descPrefix: 'Arthur Gabriel', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
   { keywords: ['cezar augusto'], result: { descPrefix: 'Cezar Augusto', categoria: 'ANTECIPAÇÃO DE LUCROS', classificacao: 'Outros' } },
 ];
+
+/** V15: Detecta forma de pagamento pelo conteúdo do email C6 Bank */
+function detectFormaPagamento(emailSubject: string, rawBody: string): string {
+  const text = `${emailSubject}\n${rawBody}`.toLowerCase();
+  if (text.includes('boleto')) return 'BOLETO';
+  if (text.includes('ted') || text.includes('transferência') || text.includes('transferencia')) return 'TED';
+  if (text.includes('débito') || text.includes('debito') || text.includes('debit')) return 'CARTÃO DÉBITO';
+  if (text.includes('pix')) return 'PIX';
+  return 'PIX'; // Fallback: C6 Bank saídas são predominantemente PIX
+}
 
 /** Classifica uma transação bancária baseado no nome do destinatário */
 function classifyTransaction(recipient: string, rawBody: string): ContaClassificacao {
@@ -2135,16 +2271,25 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
   let valorTotal = 0;
   const contasCriadas: Array<{ descricao: string; valor: number; categoria: string }> = [];
 
-  for (const tx of saidas) {
-    // Dedup: verificar se já existe conta com esse emailMessageId no campo observacoes
-    const marker = `gmail:${tx.emailMessageId}`;
-    const { data: existing } = await supabase
-      .from('contas_pagar')
-      .select('id')
-      .ilike('observacoes', `%${marker}%`)
-      .limit(1);
+  // V2: Batch dedup — busca todos os markers de uma vez para minimizar race condition
+  const { data: existingContas } = await supabase
+    .from('contas_pagar')
+    .select('observacoes')
+    .not('observacoes', 'is', null)
+    .like('observacoes', '%gmail:%')
+    .limit(5000);
 
-    if (existing && existing.length > 0) {
+  const existingMarkers = new Set<string>();
+  if (existingContas) {
+    for (const c of existingContas) {
+      const match = (c.observacoes || '').match(/gmail:([^\]\s]+)/);
+      if (match) existingMarkers.add(match[0]);
+    }
+  }
+
+  for (const tx of saidas) {
+    const marker = `gmail:${tx.emailMessageId}`;
+    if (existingMarkers.has(marker)) {
       jaExistentes++;
       continue;
     }
@@ -2161,7 +2306,8 @@ async function executeSyncBankTransactions(date: string): Promise<string> {
       competencia,
       categoria: classificacao.categoria,
       classificacao: classificacao.classificacao,
-      forma_pagamento: 'PIX',
+      // V15: Detectar forma de pagamento pelo conteúdo do email
+      forma_pagamento: detectFormaPagamento(tx.emailSubject, tx.rawBody),
       observacoes: `[${marker}] Importado automaticamente do C6 Bank`,
     };
 
@@ -2237,8 +2383,28 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
   let valorTotal = 0;
   const lancamentosCriados: Array<{ descricao: string; valor: number; categoria: string; contraparte: string }> = [];
 
+  // V2: Batch dedup — busca todos os markers existentes de uma vez
+  const { data: existingLancamentos } = await supabase
+    .from('lancamentos_conta_corrente')
+    .select('observacoes')
+    .not('observacoes', 'is', null)
+    .limit(5000);
+
+  const existingLCMarkers = new Set<string>();
+  if (existingLancamentos) {
+    for (const l of existingLancamentos) {
+      const obs = l.observacoes || '';
+      const gmailMatch = obs.match(/gmail:([^\]\s]+)/);
+      if (gmailMatch) existingLCMarkers.add(gmailMatch[0]);
+      const nsuMatch = obs.match(/c6_recebivel:([^\]\s]+)/);
+      if (nsuMatch) existingLCMarkers.add(nsuMatch[0]);
+    }
+  }
+
   let hasCardFromGmail = false;
   let gmailCardTx: gmail.BankTransaction | null = null;
+  let detalhesExcel = false;
+  let fallbackMotivo = '';
 
   // ── 1) Entradas do Gmail (PIX, depósitos; detecta cartão para etapa 2) ──
   if (gmail.isAvailable()) {
@@ -2261,13 +2427,7 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
         }
 
         const marker = `gmail:${tx.emailMessageId}`;
-        const { data: existing } = await supabase
-          .from('lancamentos_conta_corrente')
-          .select('id')
-          .ilike('observacoes', `%${marker}%`)
-          .limit(1);
-
-        if (existing && existing.length > 0) {
+        if (existingLCMarkers.has(marker)) {
           jaExistentes++;
           continue;
         }
@@ -2306,11 +2466,16 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
     let recebiveis: gmail.RecebívelParcela[] = [];
     try {
       recebiveis = await gmail.fetchRecebiveis(date);
+      if (recebiveis.length === 0) {
+        fallbackMotivo = 'Excel não encontrado ou sem parcelas';
+      }
     } catch (err: any) {
       console.warn(`[SyncBankEntradas] Erro ao extrair Excel recebíveis: ${err.message}`);
+      fallbackMotivo = `Erro Excel: ${err.message}`;
     }
 
     if (recebiveis.length > 0) {
+      detalhesExcel = true;
       // 2b) Buscar pagamentos cartão do Clinicorp para cruzar nome do paciente
       let clinicorpCards: any[] = [];
       try {
@@ -2330,13 +2495,7 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
 
       for (const rec of recebiveis) {
         const nsuMarker = `c6_recebivel:${rec.nsu}_${rec.parcela}`;
-        const { data: existing } = await supabase
-          .from('lancamentos_conta_corrente')
-          .select('id')
-          .ilike('observacoes', `%${nsuMarker}%`)
-          .limit(1);
-
-        if (existing && existing.length > 0) {
+        if (existingLCMarkers.has(nsuMarker)) {
           jaExistentes++;
           continue;
         }
@@ -2389,13 +2548,7 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
     // 2c) Fallback: se não conseguiu via Excel, usar Gmail genérico
     if (!cardImported && gmailCardTx) {
       const marker = `gmail:${gmailCardTx.emailMessageId}`;
-      const { data: existing } = await supabase
-        .from('lancamentos_conta_corrente')
-        .select('id')
-        .ilike('observacoes', `%${marker}%`)
-        .limit(1);
-
-      if (existing && existing.length > 0) {
+      if (existingLCMarkers.has(marker)) {
         jaExistentes++;
       } else {
         const classificacao = classifyEntrada(gmailCardTx.recipient, gmailCardTx.rawBody);
@@ -2425,9 +2578,11 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
     sincronizadas,
     ja_existentes: jaExistentes,
     valor_total: valorTotal,
+    detalhes_excel: detalhesExcel,
+    fallback_motivo: !detalhesExcel && hasCardFromGmail ? (fallbackMotivo || 'Usado fallback Gmail') : undefined,
     lancamentos_criados: lancamentosCriados,
     mensagem: sincronizadas > 0
-      ? `${sincronizadas} entrada(s) importada(s) totalizando R$ ${valorTotal.toFixed(2)}`
+      ? `${sincronizadas} entrada(s) importada(s) totalizando R$ ${valorTotal.toFixed(2)}${detalhesExcel ? ' (com parcelas detalhadas do Excel)' : ''}`
       : jaExistentes > 0
         ? `Todas as ${jaExistentes} entrada(s) já foram importadas anteriormente`
         : 'Nenhuma entrada importada',
@@ -2440,14 +2595,12 @@ function mapClinicorpPaymentType(type: string): string {
   if (!type) return 'OUTROS';
   const lower = type.toLowerCase();
 
-  if (lower.includes('credit') || lower.includes('crédito') || lower.includes('credito')) {
-    if (lower.includes('debit') || lower.includes('débito') || lower.includes('debito')) {
-      return 'CARTÃO DÉBITO';
-    }
-    return 'CARTÃO CRÉDITO';
-  }
+  // V21: Checar débito ANTES de crédito para evitar falso match em strings mistas
   if (lower.includes('debit') || lower.includes('débito') || lower.includes('debito')) {
     return 'CARTÃO DÉBITO';
+  }
+  if (lower.includes('credit') || lower.includes('crédito') || lower.includes('credito')) {
+    return 'CARTÃO CRÉDITO';
   }
   if (lower.includes('pix')) return 'PIX CLINICORP';
   if (lower.includes('cash') || lower.includes('dinheiro') || lower.includes('espécie')) return 'DINHEIRO';
@@ -2562,6 +2715,12 @@ async function executeQueryContaCorrente(
   categoria?: string,
   contraparte?: string,
 ): Promise<string> {
+  // V5: Validação de datas
+  const errFrom = validateDateStr(dateFrom);
+  const errTo = validateDateStr(dateTo);
+  if (errFrom) return JSON.stringify({ error: `date_from: ${errFrom}` });
+  if (errTo) return JSON.stringify({ error: `date_to: ${errTo}` });
+
   const { supabase } = await import('./supabase');
 
   let query = supabase
@@ -2570,7 +2729,7 @@ async function executeQueryContaCorrente(
     .gte('data', dateFrom)
     .lte('data', dateTo)
     .order('data', { ascending: true })
-    .limit(50);
+    .limit(200);
 
   if (tipo) {
     query = query.eq('tipo', tipo);
@@ -2588,11 +2747,12 @@ async function executeQueryContaCorrente(
   }
 
   const lancamentos = data || [];
-  const valorTotal = lancamentos.reduce((sum: number, l: any) => sum + (l.valor || 0), 0);
+  const valorTotal = roundMoney(lancamentos.reduce((sum: number, l: any) => sum + (l.valor || 0), 0));
 
   return JSON.stringify({
     total: lancamentos.length,
     valor_total: valorTotal,
+    aviso: lancamentos.length >= 200 ? 'Limite de 200 registros atingido. Use filtros mais específicos.' : undefined,
     lancamentos: lancamentos.map((l: any) => ({
       id: l.id,
       data: l.data,
@@ -2606,13 +2766,30 @@ async function executeQueryContaCorrente(
 }
 
 async function executeCreateLancamentoCC(args: Record<string, any>): Promise<string> {
+  // V4: Validação monetária
+  const valorErr = validateValor(args.valor);
+  if (valorErr) return JSON.stringify({ error: valorErr });
+
+  // V5: Validação de data
+  const dateErr = validateDateStr(args.data);
+  if (dateErr) return JSON.stringify({ error: `data: ${dateErr}` });
+
+  // V8: Validação de tipo
+  if (!args.tipo || !TIPOS_VALIDOS_CC.has(args.tipo)) {
+    return JSON.stringify({ error: `Tipo deve ser "entrada" ou "venda". Recebido: "${args.tipo}"` });
+  }
+
+  if (!args.descricao || typeof args.descricao !== 'string' || !args.descricao.trim()) {
+    return JSON.stringify({ error: 'Descrição é obrigatória' });
+  }
+
   const { supabase } = await import('./supabase');
 
   const row: Record<string, any> = {
     data: args.data,
     tipo: args.tipo,
-    descricao: args.descricao,
-    valor: args.valor,
+    descricao: args.descricao.trim(),
+    valor: roundMoney(Number(args.valor)),
   };
   if (args.hora) row.hora = args.hora;
   if (args.contraparte) row.contraparte = args.contraparte;
@@ -2626,7 +2803,7 @@ async function executeCreateLancamentoCC(args: Record<string, any>): Promise<str
     .single();
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao criar lançamento: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao criar lançamento` });
   }
 
   return JSON.stringify({
@@ -2639,7 +2816,7 @@ async function executeCreateLancamentoCC(args: Record<string, any>): Promise<str
       valor: data.valor,
       categoria: data.categoria || '',
     },
-    mensagem: `Lançamento criado: "${data.descricao}" - R$ ${data.valor.toFixed(2)} em ${data.data}`,
+    mensagem: `Lançamento criado: "${data.descricao}" - R$ ${safeToFixed(data.valor)} em ${data.data}`,
   });
 }
 
@@ -2647,9 +2824,24 @@ async function executeUpdateLancamentoCC(args: Record<string, any>): Promise<str
   const { supabase } = await import('./supabase');
 
   const { id, ...fields } = args;
+  const PROTECTED_FIELDS = new Set(['id', 'created_at', 'updated_at']);
   const updates: Record<string, any> = {};
   for (const [key, val] of Object.entries(fields)) {
-    if (val !== undefined && val !== null) updates[key] = val;
+    if (val !== undefined && val !== null && !PROTECTED_FIELDS.has(key)) updates[key] = val;
+  }
+
+  // Validações
+  if (updates.valor !== undefined) {
+    const valorErr = validateValor(updates.valor);
+    if (valorErr) return JSON.stringify({ error: valorErr });
+    updates.valor = roundMoney(Number(updates.valor));
+  }
+  if (updates.data !== undefined) {
+    const dateErr = validateDateStr(updates.data);
+    if (dateErr) return JSON.stringify({ error: `data: ${dateErr}` });
+  }
+  if (updates.tipo !== undefined && !TIPOS_VALIDOS_CC.has(updates.tipo)) {
+    return JSON.stringify({ error: `Tipo deve ser "entrada" ou "venda"` });
   }
 
   if (Object.keys(updates).length === 0) {
@@ -2664,7 +2856,7 @@ async function executeUpdateLancamentoCC(args: Record<string, any>): Promise<str
     .single();
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao atualizar lançamento: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao atualizar lançamento` });
   }
 
   return JSON.stringify({
@@ -2684,11 +2876,16 @@ async function executeUpdateLancamentoCC(args: Record<string, any>): Promise<str
 async function executeDeleteLancamentoCC(id: string): Promise<string> {
   const { supabase } = await import('./supabase');
 
-  const { data: lancamento } = await supabase
+  // V9: Verificar se existe antes de deletar
+  const { data: lancamento, error: fetchErr } = await supabase
     .from('lancamentos_conta_corrente')
     .select('id, descricao, valor')
     .eq('id', id)
     .single();
+
+  if (fetchErr || !lancamento) {
+    return JSON.stringify({ error: `Lançamento não encontrado com o ID "${id}"` });
+  }
 
   const { error } = await supabase
     .from('lancamentos_conta_corrente')
@@ -2696,15 +2893,13 @@ async function executeDeleteLancamentoCC(id: string): Promise<string> {
     .eq('id', id);
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao excluir lançamento: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao excluir lançamento` });
   }
 
   return JSON.stringify({
     sucesso: true,
     id,
-    mensagem: lancamento
-      ? `Lançamento "${lancamento.descricao}" (R$ ${lancamento.valor.toFixed(2)}) excluído`
-      : `Lançamento ${id} excluído`,
+    mensagem: `Lançamento "${lancamento.descricao}" (R$ ${safeToFixed(lancamento.valor)}) excluído`,
   });
 }
 
@@ -2726,7 +2921,7 @@ async function executeGetContaCorrenteSummary(
     .lte('data', dateTo);
 
   if (error) {
-    return JSON.stringify({ error: `Erro ao gerar resumo: ${error.message}` });
+    return JSON.stringify({ error: `Erro ao gerar resumo` });
   }
 
   const lancamentos = data || [];
@@ -2748,16 +2943,17 @@ async function executeGetContaCorrenteSummary(
     grupoMap[grupoKey].quantidade++;
   }
 
+  // V11: Arredondar totais para precisão monetária
   const grupos = Object.entries(grupoMap)
-    .map(([nome, info]) => ({ nome, total: info.total, quantidade: info.quantidade }))
+    .map(([nome, info]) => ({ nome, total: roundMoney(info.total), quantidade: info.quantidade }))
     .sort((a, b) => b.total - a.total);
 
   return JSON.stringify({
     periodo: `${dateFrom} a ${dateTo}`,
     total_lancamentos: lancamentos.length,
-    total_geral: totalGeral,
-    total_entradas: totalEntradas,
-    total_vendas: totalVendas,
+    total_geral: roundMoney(totalGeral),
+    total_entradas: roundMoney(totalEntradas),
+    total_vendas: roundMoney(totalVendas),
     agrupado_por: groupField,
     grupos,
   });

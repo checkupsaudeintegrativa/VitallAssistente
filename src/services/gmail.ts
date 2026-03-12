@@ -1,8 +1,4 @@
 import { google } from 'googleapis';
-import { execSync } from 'child_process';
-import { writeFileSync, readFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
 import { env } from '../config/env';
 
 // Lazy init — só cria o client se as env vars estiverem preenchidas
@@ -304,8 +300,10 @@ export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcel
 
   const listRes = await gmail.users.messages.list({ userId: 'me', q: query, maxResults: 10 });
   const messages = listRes.data.messages || [];
+  console.log(`[Gmail] Recebíveis: ${messages.length} email(s) encontrado(s)`);
 
   const targetFilename = `Recebiveis-Detalhado-C6Pay-${dateStr}.xlsx`;
+  const allFilenames: string[] = [];
 
   for (const msg of messages) {
     const detail = await gmail.users.messages.get({ userId: 'me', id: msg.id!, format: 'full' });
@@ -313,6 +311,7 @@ export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcel
 
     for (const part of parts) {
       if (!part.filename || !part.body?.attachmentId) continue;
+      allFilenames.push(part.filename);
       if (part.filename !== targetFilename) continue;
 
       console.log(`[Gmail] Encontrado anexo: ${part.filename}`);
@@ -330,24 +329,28 @@ export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcel
     }
   }
 
-  console.log(`[Gmail] Anexo ${targetFilename} não encontrado`);
+  console.log(`[Gmail] Anexo ${targetFilename} não encontrado. Anexos disponíveis: ${allFilenames.length > 0 ? allFilenames.join(', ') : 'nenhum'}`);
   return [];
 }
 
-function decryptAndParseExcel(buffer: Buffer): RecebívelParcela[] {
-  const encPath = join(tmpdir(), `c6_enc_${Date.now()}.xls`);
-  const decPath = join(tmpdir(), `c6_dec_${Date.now()}.xls`);
-
+async function decryptAndParseExcel(buffer: Buffer): Promise<RecebívelParcela[]> {
   try {
-    writeFileSync(encPath, buffer);
-    execSync(`python -m msoffcrypto -p ${C6_EXCEL_PASSWORD} "${encPath}" "${decPath}"`, { stdio: 'pipe' });
-
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const OfficeCrypto = require('officecrypto-tool');
     const XLSX = require('xlsx');
-    const decBuffer = readFileSync(decPath);
-    const workbook = XLSX.read(decBuffer, { type: 'buffer' });
+
+    // Descriptografa em memória (sem temp files, sem Python)
+    const isEnc = OfficeCrypto.isEncrypted(buffer);
+    console.log(`[Gmail] Excel criptografado: ${isEnc}`);
+
+    const decryptedBuffer: Buffer = isEnc
+      ? await OfficeCrypto.decrypt(buffer, { password: C6_EXCEL_PASSWORD })
+      : buffer;
+
+    const workbook = XLSX.read(decryptedBuffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+    console.log(`[Gmail] Excel: ${rows.length} linhas, colunas: ${rows[0]?.join(', ')}`);
 
     const parcelas: RecebívelParcela[] = [];
     for (const row of rows) {
@@ -375,10 +378,7 @@ function decryptAndParseExcel(buffer: Buffer): RecebívelParcela[] {
     console.log(`[Gmail] Excel decriptado: ${parcelas.length} parcela(s) de recebíveis`);
     return parcelas;
   } catch (err: any) {
-    console.warn(`[Gmail] Erro ao decriptar/parsear Excel: ${err.message}`);
+    console.error(`[Gmail] Erro ao decriptar/parsear Excel: ${err.message}`);
     return [];
-  } finally {
-    try { unlinkSync(encPath); } catch {}
-    try { unlinkSync(decPath); } catch {}
   }
 }

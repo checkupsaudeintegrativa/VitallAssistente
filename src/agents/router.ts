@@ -24,8 +24,8 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'cobrança', 'cobranca', 'cobranças',
     'vencido', 'vencidos', 'vencida', 'vencidas',
     'resumo financeiro',
-    // Contas a pagar
-    'conta', 'contas', 'contas a pagar', 'conta a pagar',
+    // Contas a pagar (removido 'conta' genérico - V12: ambíguo com "me conta", "conta do email")
+    'contas a pagar', 'conta a pagar', 'contas pagar',
     'despesa', 'despesas', 'gasto', 'gastos',
     'pagar', 'baixa', 'dar baixa',
     'fornecedor', 'boleto',
@@ -37,8 +37,8 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'extrato', 'banco', 'transação', 'transacao', 'transações', 'transacoes',
     'c6', 'c6 bank', 'sincronizar banco', 'sincroniza banco',
     'importar banco', 'saídas do banco', 'saidas do banco',
-    // Conta corrente
-    'entrada', 'entradas', 'venda', 'vendas',
+    // Conta corrente (removido 'entrada' genérico - V12: ambíguo com "entrada do paciente")
+    'entradas do banco', 'entradas bancárias', 'venda', 'vendas',
     'conta corrente', 'lancamento', 'lançamento',
     'recebimento', 'recebimentos',
     'importar entradas', 'importar vendas',
