@@ -16,6 +16,8 @@ export interface AgentConfig {
   id: AgentId;
   /** Nome legível (para logs) */
   name: string;
+  /** Modelo OpenAI a usar (default: 'gpt-4o') */
+  model?: string;
   /** Nomes das tools que este agente usa (referências a toolDefinitions em ai-tools.ts) */
   toolNames: string[];
   /** Regras de acesso */

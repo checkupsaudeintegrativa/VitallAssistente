@@ -172,7 +172,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       const routerResult = classifyIntent(userContent, mediaType, senderPhone);
       const agent = getAgent(routerResult.agentId);
 
-      console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)})`);
+      console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)}, model: ${agent.model || 'gpt-4o'})`);
 
       // 2. Checar acesso no agente
       if (agent.access.allowedRoles && !agent.access.allowedRoles.includes(userConfig?.role || 'staff')) {
@@ -218,7 +218,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
       try { await evolution.sendPresenceComposing(remoteJid); } catch {}
 
-      aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig);
+      aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, agent.model);
 
       // 5. Salvar agente usado para continuidade de contexto
       setRecentAgentId(senderPhone, routerResult.agentId);

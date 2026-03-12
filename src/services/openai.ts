@@ -10,6 +10,7 @@ import { executeTool, getToolsForUser, ToolDefinition } from './ai-tools';
 import { UserConfig } from '../config/users';
 
 let client: OpenAI | null = null;
+let financialClient: OpenAI | null = null;
 
 function getClient(): OpenAI | null {
   if (!env.OPENAI_API_KEY) return null;
@@ -17,6 +18,14 @@ function getClient(): OpenAI | null {
     client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
   }
   return client;
+}
+
+function getFinancialClient(): OpenAI | null {
+  if (!env.OPENAI_FINANCIAL_API_KEY) return null;
+  if (!financialClient) {
+    financialClient = new OpenAI({ apiKey: env.OPENAI_FINANCIAL_API_KEY });
+  }
+  return financialClient;
 }
 
 // ── Chatbot AI ──
@@ -36,12 +45,16 @@ export async function chatWithTools(
   tools?: ToolDefinition[],
   imageBase64?: string,
   mimeType?: string,
-  user?: UserConfig | null
+  user?: UserConfig | null,
+  model?: string
 ): Promise<string> {
-  const openai = getClient();
+  // Se o modelo não é gpt-4o e tem key financeira, usa o client financeiro
+  const useFinancial = model && model !== 'gpt-4o' && !!env.OPENAI_FINANCIAL_API_KEY;
+  const openai = useFinancial ? getFinancialClient() : getClient();
   if (!openai) {
     return 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns minutos.';
   }
+  const resolvedModel = model || 'gpt-4o';
 
   try {
     // Se há imagem, adiciona ao último user message como conteúdo multimodal
@@ -66,7 +79,7 @@ export async function chatWithTools(
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: resolvedModel,
         temperature: 0.4,
         max_tokens: 1000,
         messages: finalMessages,

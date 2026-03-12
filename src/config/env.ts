@@ -31,6 +31,8 @@ export const env = {
 
   // OpenAI (GPT-4o + Whisper)
   OPENAI_API_KEY: required('OPENAI_API_KEY'),
+  // OpenAI — projeto financeiro (data-sharing, modelos premium)
+  OPENAI_FINANCIAL_API_KEY: process.env.OPENAI_FINANCIAL_API_KEY || '',
 
   // Google Calendar (OAuth — mesmo CLIENT_ID/SECRET para todas as contas)
   GOOGLE_CALENDAR_CLIENT_ID: process.env.GOOGLE_CALENDAR_CLIENT_ID || '',
