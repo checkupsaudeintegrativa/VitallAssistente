@@ -680,7 +680,7 @@ export const toolDefinitions: ToolDefinition[] = [
             },
           },
           footer: { type: 'string', description: 'Texto de rodapé opcional. Ex: "Período: 01/03 a 15/03/2026"' },
-          color: { type: 'string', description: 'Cor da barra do título em hex. Default: "#3B82F6" (azul)' },
+          color: { type: 'string', description: 'Cor da barra do título em hex. Default: "#0d9488" (teal Vitall). Não precisa enviar a menos que queira uma cor diferente.' },
           caption: { type: 'string', description: 'Legenda opcional da imagem' },
         },
         required: ['phone', 'title', 'fields'],

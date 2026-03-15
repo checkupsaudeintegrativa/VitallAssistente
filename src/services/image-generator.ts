@@ -1,20 +1,39 @@
 import { ChartJSNodeCanvas } from 'chartjs-node-canvas';
 import { ChartConfiguration } from 'chart.js';
-import { createCanvas } from 'canvas';
+import { createCanvas, registerFont, loadImage } from 'canvas';
+import * as path from 'path';
 
-// ── Paleta de cores Vitall ──
+// ── Registrar fontes DM Sans (bundled TTF) ──
+
+const ASSETS_DIR = path.resolve(__dirname, '..', '..', 'assets');
+
+try {
+  registerFont(path.join(ASSETS_DIR, 'DMSans-Regular.ttf'), { family: 'DM Sans' });
+  registerFont(path.join(ASSETS_DIR, 'DMSans-Bold.ttf'), { family: 'DM Sans', weight: 'bold' });
+} catch (err: any) {
+  console.warn('[ImageGen] Não foi possível registrar fontes DM Sans:', err.message);
+}
+
+const FONT_FAMILY = 'DM Sans';
+const LOGO_PATH = path.join(ASSETS_DIR, 'vitall-logo.png');
+
+// ── Paleta de cores Vitall (teal-based) ──
+
+const VITALL_PRIMARY = '#0d9488';   // teal-600
+const VITALL_PRIMARY_DARK = '#0f766e'; // teal-700
+const VITALL_PRIMARY_LIGHT = '#ccfbf1'; // teal-100
 
 const VITALL_COLORS = [
-  '#3B82F6', // azul
-  '#10B981', // verde
-  '#EF4444', // vermelho
-  '#F59E0B', // amber
-  '#8B5CF6', // violeta
-  '#EC4899', // rosa
-  '#06B6D4', // ciano
-  '#F97316', // laranja
-  '#6366F1', // indigo
-  '#14B8A6', // teal
+  '#0d9488', // teal-600 (primary)
+  '#14b8a6', // teal-500
+  '#f59e0b', // amber-500
+  '#3b82f6', // blue-500
+  '#8b5cf6', // violet-500
+  '#ef4444', // red-500
+  '#ec4899', // pink-500
+  '#f97316', // orange-500
+  '#06b6d4', // cyan-500
+  '#6366f1', // indigo-500
 ];
 
 const VITALL_BG_COLORS = VITALL_COLORS.map((c) => c + '99'); // 60% opacity
@@ -29,6 +48,9 @@ function getChartCanvas(): ChartJSNodeCanvas {
       width: 800,
       height: 600,
       backgroundColour: '#FFFFFF',
+      chartCallback: (ChartJS) => {
+        ChartJS.defaults.font.family = FONT_FAMILY;
+      },
     });
   }
   return chartCanvas;
@@ -36,7 +58,6 @@ function getChartCanvas(): ChartJSNodeCanvas {
 
 /** Aplica defaults visuais Vitall ao config do chart */
 function applyChartDefaults(config: ChartConfiguration): ChartConfiguration {
-  // Desabilita animações (não faz sentido para imagem estática)
   config.options = config.options || {};
   config.options.animation = false;
 
@@ -54,18 +75,18 @@ function applyChartDefaults(config: ChartConfiguration): ChartConfiguration {
           : VITALL_COLORS[0];
       }
       if ((ds as any).borderWidth === undefined) {
-        (ds as any).borderWidth = config.type === 'pie' || config.type === 'doughnut' ? 2 : 2;
+        (ds as any).borderWidth = 2;
       }
     }
   }
 
   // Fonte padrão
-  config.options.font = { family: 'Arial, sans-serif', size: 14 };
+  config.options.font = { family: FONT_FAMILY, size: 14 };
 
   // Plugin title styling
   config.options.plugins = config.options.plugins || {};
   if (config.options.plugins.title) {
-    config.options.plugins.title.font = { size: 18, weight: 'bold' };
+    config.options.plugins.title.font = { size: 18, weight: 'bold', family: FONT_FAMILY };
     config.options.plugins.title.color = '#1F2937';
   }
 
@@ -73,6 +94,7 @@ function applyChartDefaults(config: ChartConfiguration): ChartConfiguration {
   config.options.plugins.legend = config.options.plugins.legend || {};
   config.options.plugins.legend.labels = config.options.plugins.legend.labels || {};
   config.options.plugins.legend.labels.color = '#374151';
+  config.options.plugins.legend.labels.font = { family: FONT_FAMILY };
 
   return config;
 }
@@ -98,79 +120,100 @@ interface CardOptions {
   title: string;
   fields: CardField[];
   footer?: string;
-  color?: string; // cor da barra do título (default: azul Vitall)
+  color?: string;
 }
 
 /**
  * Renderiza um card visual (recibo, resumo) para PNG buffer.
- * Layout: barra título colorida → rows alternadas → footer → branding.
+ * Layout: header teal com logo → rows alternadas → footer → branding com logo.
  */
 export async function renderCard(options: CardOptions): Promise<Buffer> {
-  const { title, fields, footer, color = '#3B82F6' } = options;
+  const { title, fields, footer, color = VITALL_PRIMARY } = options;
 
   const WIDTH = 600;
-  const PADDING = 24;
-  const TITLE_HEIGHT = 56;
-  const ROW_HEIGHT = 40;
-  const FOOTER_HEIGHT = footer ? 44 : 0;
-  const BRANDING_HEIGHT = 32;
-  const TOTAL_HEIGHT = TITLE_HEIGHT + fields.length * ROW_HEIGHT + FOOTER_HEIGHT + BRANDING_HEIGHT + PADDING;
+  const PADDING = 28;
+  const HEADER_HEIGHT = 64;
+  const ROW_HEIGHT = 44;
+  const DIVIDER = 1;
+  const FOOTER_HEIGHT = footer ? 48 : 0;
+  const BRANDING_HEIGHT = 52;
+  const TOTAL_HEIGHT = HEADER_HEIGHT + fields.length * (ROW_HEIGHT + DIVIDER) + FOOTER_HEIGHT + BRANDING_HEIGHT + 16;
 
   const canvas = createCanvas(WIDTH, TOTAL_HEIGHT);
   const ctx = canvas.getContext('2d');
 
-  // Background branco
+  // Background
   ctx.fillStyle = '#FFFFFF';
   ctx.fillRect(0, 0, WIDTH, TOTAL_HEIGHT);
 
-  // Barra do título
+  // Borda esquerda colorida (accent bar)
   ctx.fillStyle = color;
-  ctx.fillRect(0, 0, WIDTH, TITLE_HEIGHT);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 20px Arial';
-  ctx.fillText(title, PADDING, 36);
+  ctx.fillRect(0, 0, 5, TOTAL_HEIGHT);
 
-  // Rows alternadas
-  let y = TITLE_HEIGHT;
+  // Header
+  ctx.fillStyle = color;
+  ctx.fillRect(5, 0, WIDTH - 5, HEADER_HEIGHT);
+
+  // Título
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `bold 20px "${FONT_FAMILY}"`;
+  ctx.fillText(title, PADDING + 4, 40);
+
+  // Rows
+  let y = HEADER_HEIGHT;
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i];
 
     // Background alternado
-    ctx.fillStyle = i % 2 === 0 ? '#F9FAFB' : '#FFFFFF';
-    ctx.fillRect(0, y, WIDTH, ROW_HEIGHT);
+    ctx.fillStyle = i % 2 === 0 ? '#f0fdfa' : '#FFFFFF'; // teal-50 / white
+    ctx.fillRect(5, y, WIDTH - 5, ROW_HEIGHT);
+
+    // Linha divisória sutil
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(PADDING, y + ROW_HEIGHT, WIDTH - PADDING * 2, DIVIDER);
 
     // Label
-    ctx.fillStyle = '#6B7280';
-    ctx.font = '14px Arial';
-    ctx.fillText(field.label, PADDING, y + 26);
+    ctx.fillStyle = '#64748b';
+    ctx.font = `14px "${FONT_FAMILY}"`;
+    ctx.fillText(field.label, PADDING + 4, y + 28);
 
     // Value (alinhado à direita)
-    ctx.fillStyle = '#1F2937';
-    ctx.font = 'bold 14px Arial';
+    ctx.fillStyle = '#0f172a';
+    ctx.font = `bold 15px "${FONT_FAMILY}"`;
     const valueWidth = ctx.measureText(field.value).width;
-    ctx.fillText(field.value, WIDTH - PADDING - valueWidth, y + 26);
+    ctx.fillText(field.value, WIDTH - PADDING - valueWidth, y + 28);
 
-    y += ROW_HEIGHT;
+    y += ROW_HEIGHT + DIVIDER;
   }
 
   // Footer
   if (footer) {
-    ctx.fillStyle = '#F3F4F6';
-    ctx.fillRect(0, y, WIDTH, FOOTER_HEIGHT);
-    ctx.fillStyle = '#6B7280';
-    ctx.font = '13px Arial';
-    ctx.fillText(footer, PADDING, y + 28);
+    ctx.fillStyle = '#f8fafc';
+    ctx.fillRect(5, y, WIDTH - 5, FOOTER_HEIGHT);
+    ctx.fillStyle = '#94a3b8';
+    ctx.font = `13px "${FONT_FAMILY}"`;
+    ctx.fillText(footer, PADDING + 4, y + 30);
     y += FOOTER_HEIGHT;
   }
 
-  // Branding
-  ctx.fillStyle = '#E5E7EB';
-  ctx.fillRect(0, y, WIDTH, BRANDING_HEIGHT);
-  ctx.fillStyle = '#9CA3AF';
-  ctx.font = '11px Arial';
-  const brandText = 'Vitall Odontologia';
-  const brandWidth = ctx.measureText(brandText).width;
-  ctx.fillText(brandText, WIDTH - PADDING - brandWidth, y + 21);
+  // Branding bar com logo
+  ctx.fillStyle = '#f0fdfa'; // teal-50
+  ctx.fillRect(5, y, WIDTH - 5, BRANDING_HEIGHT);
+
+  // Tenta carregar e desenhar a logo
+  try {
+    const logo = await loadImage(LOGO_PATH);
+    const logoH = 32;
+    const logoW = (logo.width / logo.height) * logoH;
+    ctx.drawImage(logo, WIDTH - PADDING - logoW, y + (BRANDING_HEIGHT - logoH) / 2, logoW, logoH);
+  } catch {
+    // Fallback: texto
+    ctx.fillStyle = VITALL_PRIMARY;
+    ctx.font = `bold 12px "${FONT_FAMILY}"`;
+    const brandText = 'Vitall Odontologia';
+    const brandWidth = ctx.measureText(brandText).width;
+    ctx.fillText(brandText, WIDTH - PADDING - brandWidth, y + 32);
+  }
 
   return canvas.toBuffer('image/png');
 }
