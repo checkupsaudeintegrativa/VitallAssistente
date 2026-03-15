@@ -8,6 +8,15 @@ import * as imageGen from './image-generator';
 import * as ttsGen from './tts-generator';
 import { UserConfig, GoogleCalendarConfig } from '../config/users';
 
+// ── Sender phone (set por chatbot.ts antes de chatWithTools) ──
+
+let _currentSenderPhone: string | null = null;
+
+/** Define o telefone do sender atual (chamado antes de chatWithTools) */
+export function setCurrentSenderPhone(phone: string): void {
+  _currentSenderPhone = phone;
+}
+
 // ── Types ──
 
 export interface ToolDefinition {
@@ -1412,7 +1421,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
     });
 
     if (event) {
-      const resolvedPhone = phone || user?.phones?.[0];
+      const resolvedPhone = phone || _currentSenderPhone || user?.phones?.[0];
       if (resolvedPhone) sendConfirmationImage(resolvedPhone);
 
       const remindDate = new Date(datetime);
@@ -1433,7 +1442,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
   const result = await db.createReminder(title, datetime, phone, recurring);
 
   if (result) {
-    const resolvedPhone = phone || user?.phones?.[0];
+    const resolvedPhone = phone || _currentSenderPhone || user?.phones?.[0];
     if (resolvedPhone) sendConfirmationImage(resolvedPhone);
 
     const remindDate = new Date(datetime);

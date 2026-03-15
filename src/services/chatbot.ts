@@ -3,7 +3,7 @@ import * as db from './supabase';
 import { chatWithTools, transcribeAudio, ChatMessage } from './openai';
 import { buildSystemPrompt } from '../templates/system-prompt';
 import { getUserByPhone } from '../config/users';
-import { getToolsByNames, adaptCalendarTools } from './ai-tools';
+import { getToolsByNames, adaptCalendarTools, setCurrentSenderPhone } from './ai-tools';
 import { classifyIntent, setRecentAgentId } from '../agents/router';
 import { getAgent } from '../agents/registry';
 import { buildSharedPrompt } from '../agents/shared-prompt';
@@ -195,6 +195,9 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
     const userConfig = getUserByPhone(senderPhone);
 
     let aiResponse: string;
+
+    // Registra o telefone real do sender (usado como fallback nos executores de tools)
+    setCurrentSenderPhone(senderPhone);
 
     // Inicia loop de presença que persiste até a resposta SER ENVIADA
     // phoneKey=senderPhone permite ai-tools trocar composing↔recording sem criar loop paralelo
