@@ -24,8 +24,8 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'cobrança', 'cobranca', 'cobranças',
     'vencido', 'vencidos', 'vencida', 'vencidas',
     'resumo financeiro',
-    // Contas a pagar (removido 'conta' genérico - V12: ambíguo com "me conta", "conta do email")
-    'contas a pagar', 'conta a pagar', 'contas pagar',
+    // Contas a pagar ('conta' genérico removido - ambíguo com "me conta", mas 'contas' plural é financeiro)
+    'contas a pagar', 'conta a pagar', 'contas pagar', 'contas',
     'despesa', 'despesas', 'gasto', 'gastos',
     'pagar', 'baixa', 'dar baixa',
     'fornecedor', 'boleto',
@@ -43,6 +43,7 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'recebimento', 'recebimentos',
     'importar entradas', 'importar vendas',
     'sincronizar vendas', 'clinicorp',
+    'sincronizacao', 'sincronização',
   ],
   ponto: [
     'ponto', 'registro de ponto', 'registros de ponto',

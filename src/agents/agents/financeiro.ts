@@ -3,7 +3,7 @@ import { AgentConfig } from '../types';
 export const financeiroAgent: AgentConfig = {
   id: 'financeiro',
   name: 'Financeiro',
-  model: 'gpt-5.2',
+  model: 'gpt-5.4',
   toolNames: [
     'query_payments',
     'get_financial_summary',

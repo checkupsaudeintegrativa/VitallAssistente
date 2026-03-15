@@ -302,7 +302,12 @@ export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcel
   const messages = listRes.data.messages || [];
   console.log(`[Gmail] Recebíveis: ${messages.length} email(s) encontrado(s)`);
 
-  const targetFilename = `Recebiveis-Detalhado-C6Pay-${dateStr}.xlsx`;
+  // Aceita variações de nome: Recebiveis-Detalhado-C6Pay-DATE.xlsx ou Relatorio-Diario-C6Pay-DATE.xlsx
+  // A data do arquivo pode ser dateStr ou o dia anterior (relatório do dia anterior chega no email do dia seguinte)
+  const prevDay = new Date(Number(year), Number(month) - 1, Number(day) - 1);
+  const prevDateStr = `${prevDay.getFullYear()}-${String(prevDay.getMonth() + 1).padStart(2, '0')}-${String(prevDay.getDate()).padStart(2, '0')}`;
+  const acceptableDates = [dateStr, prevDateStr];
+
   const allFilenames: string[] = [];
 
   for (const msg of messages) {
@@ -312,7 +317,11 @@ export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcel
     for (const part of parts) {
       if (!part.filename || !part.body?.attachmentId) continue;
       allFilenames.push(part.filename);
-      if (part.filename !== targetFilename) continue;
+
+      // Match: qualquer .xlsx do C6Pay com data aceita
+      const isC6PayXlsx = part.filename.includes('C6Pay') && part.filename.endsWith('.xlsx');
+      const hasAcceptableDate = acceptableDates.some((d) => part.filename!.includes(d));
+      if (!isC6PayXlsx || !hasAcceptableDate) continue;
 
       console.log(`[Gmail] Encontrado anexo: ${part.filename}`);
 
@@ -329,7 +338,7 @@ export async function fetchRecebiveis(dateStr: string): Promise<RecebívelParcel
     }
   }
 
-  console.log(`[Gmail] Anexo ${targetFilename} não encontrado. Anexos disponíveis: ${allFilenames.length > 0 ? allFilenames.join(', ') : 'nenhum'}`);
+  console.log(`[Gmail] Nenhum anexo C6Pay .xlsx encontrado para ${dateStr}. Anexos disponíveis: ${allFilenames.length > 0 ? allFilenames.join(', ') : 'nenhum'}`);
   return [];
 }
 
