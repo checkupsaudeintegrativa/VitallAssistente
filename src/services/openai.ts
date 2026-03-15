@@ -96,7 +96,7 @@ export async function chatWithTools(
 
       // Modelos gpt-5.x usam max_completion_tokens; gpt-4o usa max_tokens
       const isNewModel = resolvedModel.startsWith('gpt-5') || resolvedModel.startsWith('o');
-      const maxTokens = isNewModel ? 4096 : 2000;
+      const maxTokens = isNewModel ? 16384 : 4096;
       const response = await openai.chat.completions.create({
         model: resolvedModel,
         temperature: 0.4,
@@ -110,9 +110,12 @@ export async function chatWithTools(
       const message = choice.message;
 
       // Log do modelo real retornado pela API + tokens usados
-      if (i === 0) {
-        const usage = response.usage;
-        console.log(`[OpenAI] Resposta modelo: ${response.model} | Tokens: ${usage?.total_tokens || '?'} (prompt: ${usage?.prompt_tokens || '?'}, completion: ${usage?.completion_tokens || '?'})`);
+      const usage = response.usage;
+      console.log(`[OpenAI] Iter ${i} | modelo: ${response.model} | finish: ${choice.finish_reason} | tokens: ${usage?.total_tokens || '?'} (prompt: ${usage?.prompt_tokens || '?'}, completion: ${usage?.completion_tokens || '?'})`);
+
+      // Detectar resposta cortada (JSON de tool_calls pode estar incompleto)
+      if (choice.finish_reason === 'length') {
+        console.warn(`[OpenAI] ⚠ Resposta cortada por max_completion_tokens (${maxTokens})! Iteração ${i}`);
       }
 
       // Se não tem tool_calls, retorna o texto final
@@ -131,15 +134,18 @@ export async function chatWithTools(
         let fnArgs: Record<string, any> = {};
         try {
           fnArgs = JSON.parse(fn.arguments || '{}');
-        } catch {
+        } catch (parseErr: any) {
+          console.error(`[OpenAI] ⚠ JSON.parse falhou para ${fnName}: ${(fn.arguments || '').substring(0, 200)}...`);
           fnArgs = {};
         }
 
-        console.log(`[OpenAI] Tool call: ${fnName}(${JSON.stringify(fnArgs)})`);
+        // Log truncado para não poluir (chart_config pode ser enorme)
+        const argsStr = JSON.stringify(fnArgs);
+        console.log(`[OpenAI] Tool call: ${fnName}(${argsStr.substring(0, 300)}${argsStr.length > 300 ? '...' : ''})`);
 
         const result = await executeTool(fnName, fnArgs, user);
 
-        console.log(`[OpenAI] Tool result (${fnName}): ${result.substring(0, 200)}`);
+        console.log(`[OpenAI] Tool result (${fnName}): ${result.substring(0, 300)}`);
 
         finalMessages.push({
           role: 'tool',
