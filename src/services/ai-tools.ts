@@ -642,14 +642,22 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'render_chart',
-      description: 'Renderiza um gráfico (bar, line, pie, doughnut) e envia como imagem no WhatsApp. Envie um config Chart.js completo. Use para dados comparativos, evolução temporal, distribuição por categoria. Exemplos: "gráfico de despesas por categoria", "evolução do faturamento", "distribuição de pagamentos".',
+      description: 'Renderiza um GRÁFICO VISUAL (barras, linhas, pizza, rosca) e envia como IMAGEM no WhatsApp. SEMPRE use esta tool quando o usuário pedir "gráfico", "chart", "grafico de barras", "pizza", "evolução", ou qualquer visualização gráfica de dados. NÃO use render_card para gráficos — render_card é só para tabelas/resumos textuais.',
       parameters: {
         type: 'object',
         properties: {
           phone: { type: 'string', description: 'Telefone de quem pediu (do [Contexto])' },
           chart_config: {
             type: 'object',
-            description: 'Config Chart.js completo com type, data (labels + datasets), e options (título, etc.). Exemplo: { "type": "bar", "data": { "labels": ["Jan","Fev"], "datasets": [{ "label": "Despesas", "data": [1500, 2300] }] }, "options": { "plugins": { "title": { "display": true, "text": "Despesas por mês" } } } }',
+            description: `Config Chart.js. EXEMPLOS por tipo:
+
+BARRAS: { "type": "bar", "data": { "labels": ["Lab","Impostos","Material"], "datasets": [{ "label": "Despesas (R$)", "data": [8400, 3200, 2150] }] }, "options": { "plugins": { "title": { "display": true, "text": "Despesas por Categoria" } } } }
+
+PIZZA: { "type": "pie", "data": { "labels": ["PIX","Cartão","Dinheiro"], "datasets": [{ "data": [12000, 8500, 3200] }] }, "options": { "plugins": { "title": { "display": true, "text": "Receita por Forma de Pagamento" } } } }
+
+LINHAS: { "type": "line", "data": { "labels": ["Seg","Ter","Qua","Qui","Sex"], "datasets": [{ "label": "Faturamento", "data": [3200, 4100, 2800, 5200, 3900], "fill": false, "tension": 0.3 }] }, "options": { "plugins": { "title": { "display": true, "text": "Faturamento da Semana" } } } }
+
+ROSCA: { "type": "doughnut", "data": { "labels": ["Pago","Em aberto"], "datasets": [{ "data": [18500, 4200] }] }, "options": { "plugins": { "title": { "display": true, "text": "Status Contas a Pagar" } } } }`,
           },
           caption: { type: 'string', description: 'Legenda opcional da imagem' },
         },
