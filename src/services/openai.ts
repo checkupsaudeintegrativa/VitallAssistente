@@ -32,7 +32,7 @@ function getFinancialClient(): OpenAI | null {
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
-  content: string | Array<{ type: string; text?: string; image_url?: { url: string } }>;
+  content: string | Array<{ type: string; text?: string; image_url?: { url: string }; file?: { filename: string; file_data: string } }>;
 }
 
 /**
@@ -57,18 +57,30 @@ export async function chatWithTools(
   const resolvedModel = model || 'gpt-4o';
 
   try {
-    // Se há imagem, adiciona ao último user message como conteúdo multimodal
+    // Se há imagem/PDF, adiciona ao último user message como conteúdo multimodal
     const finalMessages: any[] = [...messages];
     if (imageBase64 && mimeType) {
       const lastMsg = finalMessages[finalMessages.length - 1];
       if (lastMsg && lastMsg.role === 'user') {
         const textContent = typeof lastMsg.content === 'string' ? lastMsg.content : '';
+        const isPdf = mimeType === 'application/pdf';
+
+        const mediaPart = isPdf
+          ? {
+              type: 'file',
+              file: {
+                filename: 'document.pdf',
+                file_data: `data:application/pdf;base64,${imageBase64}`,
+              },
+            }
+          : {
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+            };
+
         lastMsg.content = [
-          { type: 'text', text: textContent || 'Jéssica enviou esta imagem:' },
-          {
-            type: 'image_url',
-            image_url: { url: `data:${mimeType};base64,${imageBase64}` },
-          },
+          { type: 'text', text: textContent || (isPdf ? 'Documento PDF enviado:' : 'Imagem enviada:') },
+          mediaPart,
         ];
       }
     }

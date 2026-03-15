@@ -114,10 +114,6 @@ export function classifyIntent(
   mediaType?: string,
   phone?: string,
 ): RouterResult {
-  // Mídia: roteamento direto
-  if (mediaType === 'image') return { agentId: 'paciente', confidence: 0.8 };
-  if (mediaType === 'document') return { agentId: 'paciente', confidence: 0.7 };
-
   // Normalizar: lowercase, remover acentos
   const lower = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
@@ -137,7 +133,27 @@ export function classifyIntent(
     }
   }
 
-  // Se achou keyword: retorna o agente
+  // Mídia: roteamento inteligente
+  if (mediaType === 'image' || mediaType === 'document') {
+    // Se tem caption/texto com keyword → usa o agente da keyword
+    if (bestScore > 0) {
+      return { agentId: bestAgent, confidence: Math.min(bestScore / 3, 1) };
+    }
+
+    // Sem caption com keyword → continuidade de contexto (último agente)
+    if (phone) {
+      const recentAgent = getRecentAgentId(phone);
+      if (recentAgent && recentAgent !== 'geral') {
+        return { agentId: recentAgent, confidence: 0.6 };
+      }
+    }
+
+    // Sem contexto → default por tipo
+    if (mediaType === 'image') return { agentId: 'paciente', confidence: 0.5 };
+    return { agentId: 'geral', confidence: 0.4 };
+  }
+
+  // Mensagem de texto: se achou keyword, retorna o agente
   if (bestScore > 0) {
     return { agentId: bestAgent, confidence: Math.min(bestScore / 3, 1) };
   }

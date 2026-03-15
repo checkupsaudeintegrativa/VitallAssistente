@@ -133,7 +133,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       if (media) {
         if (media.mimetype.includes('pdf') || media.mimetype.includes('image')) {
           imageBase64 = media.base64;
-          imageMime = media.mimetype.includes('pdf') ? 'image/png' : media.mimetype;
+          imageMime = media.mimetype;
           userContent = text || `${senderName} enviou um documento/PDF.`;
         } else {
           userContent = text || '[Documento enviado]';
@@ -218,7 +218,10 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
       try { await evolution.sendPresenceComposing(remoteJid); } catch {}
 
-      aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, agent.model);
+      // Quando há mídia (foto/PDF), forçar gpt-5.4 para melhor visão
+      const effectiveModel = imageBase64 ? 'gpt-5.4' : (agent.model || 'gpt-4o');
+
+      aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, effectiveModel);
 
       // 5. Salvar agente usado para continuidade de contexto
       setRecentAgentId(senderPhone, routerResult.agentId);
