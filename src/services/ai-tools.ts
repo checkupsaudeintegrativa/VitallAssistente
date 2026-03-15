@@ -699,7 +699,7 @@ ROSCA: { "type": "doughnut", "data": { "labels": ["Pago","Em aberto"], "datasets
     type: 'function',
     function: {
       name: 'send_audio',
-      description: 'Converte texto em áudio e envia como mensagem de voz no WhatsApp. O sistema divide automaticamente textos longos em múltiplos áudios curtos (~30-45s cada). Use PROATIVAMENTE (sem o usuário pedir) quando a resposta for longa/complexa e ouvir seria mais fácil que ler. Ideal para análises, conselhos, explicações detalhadas. Pode enviar junto com texto e gráficos — cada um complementa. NÃO use para respostas curtas (1-2 frases). Escreva o texto de forma natural e conversacional, como se estivesse falando.',
+      description: 'Converte texto em áudio de voz no WhatsApp. O sistema divide textos longos em múltiplos áudios curtos automaticamente. Use PROATIVAMENTE quando a resposta for longa/complexa. REGRA CRUCIAL DO TEXTO: escreva EXATAMENTE como uma pessoa fala num áudio de WhatsApp — informal, direto, com pausas naturais (vírgulas, reticências). NUNCA escreva como relatório, documento ou lista. Imagine que você está mandando um áudio para um colega de trabalho. Exemplos: BOM: "Então cara, olhei aqui os números do mês e... tá indo bem, viu? A gente faturou quase dezesseis mil, o que é uns dois mil a mais que o mês passado. Só que tem um detalhe... os gastos com laboratório subiram bastante." RUIM: "O faturamento do mês foi de R$ 15.930,00, representando um aumento de 14% em relação ao mês anterior. As despesas com laboratório apresentaram elevação significativa." Não use asteriscos, bullets, números formatados (R$ 15.930,00) nem estrutura de texto. Fale os valores por extenso (quinze mil e novecentos). Use "né", "tipo", "olha", "então", "sabe" — linguagem natural brasileira.',
       parameters: {
         type: 'object',
         properties: {
@@ -3162,16 +3162,13 @@ async function executeSendAudio(phone: string, text: string): Promise<string> {
     const chunks = splitTextForAudio(text);
 
     for (let i = 0; i < chunks.length; i++) {
-      // Mostrar "gravando..." antes de cada chunk
-      if (presence) presence.setMode('recording');
-
       const buffer = await ttsGen.generateAudio(chunks[i]);
       const base64 = buffer.toString('base64');
-
-      // Volta para "digitando..." enquanto envia
-      if (presence) presence.setMode('composing');
       await evolution.sendAudio(phone, base64);
     }
+
+    // Só volta para "digitando..." DEPOIS de todos os áudios enviados
+    if (presence) presence.setMode('composing');
 
     return JSON.stringify({
       sucesso: true,
