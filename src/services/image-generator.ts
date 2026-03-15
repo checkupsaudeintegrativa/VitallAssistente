@@ -8,13 +8,13 @@ import * as path from 'path';
 const ASSETS_DIR = path.resolve(__dirname, '..', '..', 'assets');
 
 try {
-  registerFont(path.join(ASSETS_DIR, 'DMSans-Regular.ttf'), { family: 'DM Sans' });
-  registerFont(path.join(ASSETS_DIR, 'DMSans-Bold.ttf'), { family: 'DM Sans', weight: 'bold' });
+  registerFont(path.join(ASSETS_DIR, 'DMSans-Regular.ttf'), { family: 'DMSans' });
+  registerFont(path.join(ASSETS_DIR, 'DMSans-Bold.ttf'), { family: 'DMSans', weight: 'bold' });
 } catch (err: any) {
   console.warn('[ImageGen] Não foi possível registrar fontes DM Sans:', err.message);
 }
 
-const FONT_FAMILY = 'DM Sans';
+const FONT_FAMILY = 'DMSans';
 const LOGO_PATH = path.join(ASSETS_DIR, 'vitall-logo.png');
 
 // ── Paleta de cores Vitall (teal-based) ──
