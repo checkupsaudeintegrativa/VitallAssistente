@@ -78,6 +78,10 @@ export async function chatWithTools(
     const resolvedTools = tools || getToolsForUser(user);
 
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+      if (i === 0) {
+        console.log(`[OpenAI] Modelo: ${resolvedModel} | Client: ${useFinancial ? 'financeiro' : 'padrão'}`);
+      }
+
       const response = await openai.chat.completions.create({
         model: resolvedModel,
         temperature: 0.4,
@@ -89,6 +93,12 @@ export async function chatWithTools(
 
       const choice = response.choices[0];
       const message = choice.message;
+
+      // Log do modelo real retornado pela API + tokens usados
+      if (i === 0) {
+        const usage = response.usage;
+        console.log(`[OpenAI] Resposta modelo: ${response.model} | Tokens: ${usage?.total_tokens || '?'} (prompt: ${usage?.prompt_tokens || '?'}, completion: ${usage?.completion_tokens || '?'})`);
+      }
 
       // Se não tem tool_calls, retorna o texto final
       if (!message.tool_calls || message.tool_calls.length === 0) {
