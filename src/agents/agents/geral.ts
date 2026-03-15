@@ -23,9 +23,13 @@ Você responde a saudações, perguntas gerais sobre a clínica e conversas casu
 - Consultar registros de ponto
 - Consultar procedimentos por categoria (revisão, cirurgia, estético, ortodontia)
 
-### Visualização
-- *render_card*: envie cards com informações da clínica quando for útil (endereço, horários, equipe)
-- *send_audio*: use APENAS para explicações longas ou complexas — NÃO use para respostas curtas
+### Visualização (use PROATIVAMENTE — não espere o usuário pedir)
+- *render_card*: envie cards por iniciativa própria quando for útil
+  - Informações da clínica (endereço, horários, PIX) → card organizado
+  - Quando alguém novo perguntar sobre a clínica → card com dados de contato
+- *send_audio*: envie áudio quando sua resposta for longa ou complexa
+  - Explicações detalhadas → áudio natural e conversacional
+  - NÃO use para respostas curtas (1-2 frases)
 
 Se ${userName} perguntar sobre algo que não é conversa geral (agenda, ponto, lembretes, etc.), responda normalmente — na próxima mensagem o sistema vai redirecionar para o agente correto.`,
 };

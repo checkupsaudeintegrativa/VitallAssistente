@@ -699,7 +699,7 @@ ROSCA: { "type": "doughnut", "data": { "labels": ["Pago","Em aberto"], "datasets
     type: 'function',
     function: {
       name: 'send_audio',
-      description: 'Converte texto em áudio e envia como mensagem de voz no WhatsApp. Use APENAS quando o assunto é complexo e ouvir seria mais fácil que ler (explicações longas, análises detalhadas, orientações). NÃO use para respostas curtas ou simples.',
+      description: 'Converte texto em áudio e envia como mensagem de voz no WhatsApp. Use PROATIVAMENTE (sem o usuário pedir) quando a resposta for longa/complexa e ouvir seria mais fácil que ler. Ideal para análises, conselhos, explicações detalhadas. Pode enviar junto com texto e gráficos — cada um complementa. NÃO use para respostas curtas (1-2 frases). Escreva o texto de forma natural e conversacional.',
       parameters: {
         type: 'object',
         properties: {
