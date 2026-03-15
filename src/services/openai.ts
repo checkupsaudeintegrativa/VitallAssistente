@@ -82,14 +82,16 @@ export async function chatWithTools(
         console.log(`[OpenAI] Modelo: ${resolvedModel} | Client: ${useFinancial ? 'financeiro' : 'padrão'}`);
       }
 
+      // Modelos gpt-5.x usam max_completion_tokens; gpt-4o usa max_tokens
+      const isNewModel = resolvedModel.startsWith('gpt-5') || resolvedModel.startsWith('o');
       const response = await openai.chat.completions.create({
         model: resolvedModel,
         temperature: 0.4,
-        max_tokens: 1000,
+        ...(isNewModel ? { max_completion_tokens: 1000 } : { max_tokens: 1000 }),
         messages: finalMessages,
         tools: resolvedTools as any,
         tool_choice: 'auto',
-      });
+      } as any);
 
       const choice = response.choices[0];
       const message = choice.message;
