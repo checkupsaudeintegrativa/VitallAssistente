@@ -44,6 +44,12 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'importar entradas', 'importar vendas',
     'sincronizar vendas', 'clinicorp',
     'sincronizacao', 'sincronização',
+    // Análise e consultoria financeira
+    'analise financeira', 'análise financeira', 'analise', 'análise',
+    'como estamos', 'saude financeira', 'saúde financeira',
+    'conselho', 'opiniao', 'opinião', 'sugestao', 'sugestão',
+    'margem', 'lucro liquido', 'lucro líquido', 'rentabilidade',
+    'fluxo de caixa', 'previsao', 'previsão',
   ],
   ponto: [
     'ponto', 'registro de ponto', 'registros de ponto',
