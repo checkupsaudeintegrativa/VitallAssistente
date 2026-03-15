@@ -141,6 +141,73 @@ export async function sendMedia(
   }
 }
 
+/** Envia imagem inline via Evolution API (aparece como foto, não documento) */
+export async function sendImage(
+  phone: string,
+  base64: string,
+  caption?: string,
+  remoteJid?: string
+): Promise<boolean> {
+  const number = resolveNumber(phone, remoteJid);
+  if (!number) {
+    console.error('[Evolution] Telefone inválido para sendImage:', phone);
+    return false;
+  }
+
+  try {
+    await client.post(`/message/sendMedia/${env.EVOLUTION_INSTANCE}`, {
+      number,
+      mediatype: 'image',
+      mimetype: 'image/png',
+      media: base64,
+      caption: caption || '',
+    });
+
+    await delay(2000);
+    return true;
+  } catch (error: any) {
+    console.error(
+      '[Evolution] Erro ao enviar imagem para',
+      number,
+      ':',
+      error?.response?.data || error.message
+    );
+    return false;
+  }
+}
+
+/** Envia áudio como mensagem de voz (PTT) via Evolution API */
+export async function sendAudio(
+  phone: string,
+  base64: string,
+  remoteJid?: string
+): Promise<boolean> {
+  const number = resolveNumber(phone, remoteJid);
+  if (!number) {
+    console.error('[Evolution] Telefone inválido para sendAudio:', phone);
+    return false;
+  }
+
+  try {
+    await client.post(`/message/sendWhatsAppAudio/${env.EVOLUTION_INSTANCE}`, {
+      number,
+      audio: base64,
+      encoding: true,
+    });
+
+    await delay(2000);
+    return true;
+  } catch (error: any) {
+    console.error(
+      '[Evolution] Erro ao enviar áudio para',
+      number,
+      ':',
+      error?.response?.data || error.message
+    );
+    return false;
+  }
+}
+
 /** Baixa mídia (imagem/PDF/áudio) de uma mensagem como base64 */
 export async function getBase64FromMedia(
   messageId: string,

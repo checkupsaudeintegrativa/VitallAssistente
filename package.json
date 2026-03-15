@@ -11,9 +11,13 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",
     "axios": "^1.7.0",
+    "canvas": "^3.2.1",
+    "chart.js": "^4.5.1",
+    "chartjs-node-canvas": "^5.0.0",
     "date-fns": "^3.6.0",
     "date-fns-tz": "^3.1.0",
     "dotenv": "^16.4.0",
+    "edge-tts": "^1.0.1",
     "express": "^4.21.0",
     "googleapis": "^171.4.0",
     "node-cron": "^3.0.3",

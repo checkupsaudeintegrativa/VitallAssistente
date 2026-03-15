@@ -3,7 +3,7 @@ import { AgentConfig } from '../types';
 export const geralAgent: AgentConfig = {
   id: 'geral',
   name: 'Geral',
-  toolNames: [],
+  toolNames: ['render_card', 'send_audio'],
   access: {},
   buildPrompt: (userName) => `## Agente: Conversa Geral
 
@@ -22,6 +22,10 @@ Você responde a saudações, perguntas gerais sobre a clínica e conversas casu
 - Criar e gerenciar lembretes
 - Consultar registros de ponto
 - Consultar procedimentos por categoria (revisão, cirurgia, estético, ortodontia)
+
+### Visualização
+- *render_card*: envie cards com informações da clínica quando for útil (endereço, horários, equipe)
+- *send_audio*: use APENAS para explicações longas ou complexas — NÃO use para respostas curtas
 
 Se ${userName} perguntar sobre algo que não é conversa geral (agenda, ponto, lembretes, etc.), responda normalmente — na próxima mensagem o sistema vai redirecionar para o agente correto.`,
 };

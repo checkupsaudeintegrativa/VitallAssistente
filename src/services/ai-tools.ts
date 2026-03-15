@@ -4,6 +4,8 @@ import * as gcal from './google-calendar';
 import * as gmail from './gmail';
 import * as ponto from './ponto-report';
 import * as evolution from './evolution';
+import * as imageGen from './image-generator';
+import * as ttsGen from './tts-generator';
 import { UserConfig, GoogleCalendarConfig } from '../config/users';
 
 // ── Types ──
@@ -635,6 +637,71 @@ export const toolDefinitions: ToolDefinition[] = [
       },
     },
   },
+  // ── Visualização: Gráficos, Cards, Áudio ──
+  {
+    type: 'function',
+    function: {
+      name: 'render_chart',
+      description: 'Renderiza um gráfico (bar, line, pie, doughnut) e envia como imagem no WhatsApp. Envie um config Chart.js completo. Use para dados comparativos, evolução temporal, distribuição por categoria. Exemplos: "gráfico de despesas por categoria", "evolução do faturamento", "distribuição de pagamentos".',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone: { type: 'string', description: 'Telefone de quem pediu (do [Contexto])' },
+          chart_config: {
+            type: 'object',
+            description: 'Config Chart.js completo com type, data (labels + datasets), e options (título, etc.). Exemplo: { "type": "bar", "data": { "labels": ["Jan","Fev"], "datasets": [{ "label": "Despesas", "data": [1500, 2300] }] }, "options": { "plugins": { "title": { "display": true, "text": "Despesas por mês" } } } }',
+          },
+          caption: { type: 'string', description: 'Legenda opcional da imagem' },
+        },
+        required: ['phone', 'chart_config'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'render_card',
+      description: 'Renderiza um card visual (recibo, resumo, ficha) e envia como imagem no WhatsApp. Use para resumos compactos com pares label/valor. Exemplos: "resumo financeiro do dia", "recibo de pagamento", "ficha do paciente".',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone: { type: 'string', description: 'Telefone de quem pediu (do [Contexto])' },
+          title: { type: 'string', description: 'Título do card. Ex: "Resumo Financeiro - Março/2026"' },
+          fields: {
+            type: 'array',
+            description: 'Lista de pares label/valor para exibir no card',
+            items: {
+              type: 'object',
+              properties: {
+                label: { type: 'string', description: 'Rótulo do campo. Ex: "Total Receitas"' },
+                value: { type: 'string', description: 'Valor do campo. Ex: "R$ 15.430,00"' },
+              },
+              required: ['label', 'value'],
+            },
+          },
+          footer: { type: 'string', description: 'Texto de rodapé opcional. Ex: "Período: 01/03 a 15/03/2026"' },
+          color: { type: 'string', description: 'Cor da barra do título em hex. Default: "#3B82F6" (azul)' },
+          caption: { type: 'string', description: 'Legenda opcional da imagem' },
+        },
+        required: ['phone', 'title', 'fields'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'send_audio',
+      description: 'Converte texto em áudio e envia como mensagem de voz no WhatsApp. Use APENAS quando o assunto é complexo e ouvir seria mais fácil que ler (explicações longas, análises detalhadas, orientações). NÃO use para respostas curtas ou simples.',
+      parameters: {
+        type: 'object',
+        properties: {
+          phone: { type: 'string', description: 'Telefone de quem pediu (do [Contexto])' },
+          text: { type: 'string', description: 'Texto para falar. Escreva de forma natural e conversacional, como se estivesse falando. Máximo ~2000 caracteres.' },
+        },
+        required: ['phone', 'text'],
+      },
+    },
+  },
 ];
 
 // ── Tool Executors ──
@@ -1096,6 +1163,16 @@ export async function executeTool(name: string, args: Record<string, any>, user?
 
       case 'get_conta_corrente_summary':
         return executeGetContaCorrenteSummary(args.date_from, args.date_to, args.agrupar_por);
+
+      // ── Visualização: Gráficos, Cards, Áudio ──
+      case 'render_chart':
+        return executeRenderChart(args.phone, args.chart_config, args.caption);
+
+      case 'render_card':
+        return executeRenderCard(args.phone, args.title, args.fields, args.footer, args.color, args.caption);
+
+      case 'send_audio':
+        return executeSendAudio(args.phone, args.text);
 
       default:
         return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
@@ -3012,4 +3089,72 @@ async function executeGetContaCorrenteSummary(
     agrupado_por: groupField,
     grupos,
   });
+}
+
+// ── Visualização: Gráficos, Cards, Áudio ──
+
+async function executeRenderChart(phone: string, chartConfig: any, caption?: string): Promise<string> {
+  if (!phone) return JSON.stringify({ error: 'Parâmetro phone é obrigatório' });
+  if (!chartConfig || !chartConfig.type || !chartConfig.data) {
+    return JSON.stringify({ error: 'chart_config deve ter type e data' });
+  }
+
+  try {
+    const buffer = await imageGen.renderChart(chartConfig);
+    const base64 = buffer.toString('base64');
+    const sent = await evolution.sendImage(phone, base64, caption);
+    return JSON.stringify({
+      sucesso: sent,
+      mensagem: sent ? 'Gráfico enviado com sucesso' : 'Erro ao enviar gráfico',
+    });
+  } catch (err: any) {
+    console.error('[AI-Tools] Erro ao renderizar gráfico:', err.message);
+    return JSON.stringify({ error: 'Erro ao gerar gráfico: ' + err.message });
+  }
+}
+
+async function executeRenderCard(
+  phone: string,
+  title: string,
+  fields: Array<{ label: string; value: string }>,
+  footer?: string,
+  color?: string,
+  caption?: string,
+): Promise<string> {
+  if (!phone) return JSON.stringify({ error: 'Parâmetro phone é obrigatório' });
+  if (!title) return JSON.stringify({ error: 'Parâmetro title é obrigatório' });
+  if (!fields || !Array.isArray(fields) || fields.length === 0) {
+    return JSON.stringify({ error: 'fields deve ser um array não-vazio de { label, value }' });
+  }
+
+  try {
+    const buffer = await imageGen.renderCard({ title, fields, footer, color });
+    const base64 = buffer.toString('base64');
+    const sent = await evolution.sendImage(phone, base64, caption);
+    return JSON.stringify({
+      sucesso: sent,
+      mensagem: sent ? 'Card enviado com sucesso' : 'Erro ao enviar card',
+    });
+  } catch (err: any) {
+    console.error('[AI-Tools] Erro ao renderizar card:', err.message);
+    return JSON.stringify({ error: 'Erro ao gerar card: ' + err.message });
+  }
+}
+
+async function executeSendAudio(phone: string, text: string): Promise<string> {
+  if (!phone) return JSON.stringify({ error: 'Parâmetro phone é obrigatório' });
+  if (!text) return JSON.stringify({ error: 'Parâmetro text é obrigatório' });
+
+  try {
+    const buffer = await ttsGen.generateAudio(text);
+    const base64 = buffer.toString('base64');
+    const sent = await evolution.sendAudio(phone, base64);
+    return JSON.stringify({
+      sucesso: sent,
+      mensagem: sent ? 'Áudio enviado com sucesso' : 'Erro ao enviar áudio',
+    });
+  } catch (err: any) {
+    console.error('[AI-Tools] Erro ao gerar áudio TTS:', err.message);
+    return JSON.stringify({ error: 'Erro ao gerar áudio: ' + err.message });
+  }
 }

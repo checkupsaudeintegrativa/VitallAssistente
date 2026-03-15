@@ -11,6 +11,7 @@ export const pontoAgent: AgentConfig = {
     'set_ausencia',
     'delete_ausencia',
     'set_saldo_snapshot',
+    'render_chart',
   ],
   access: {},
   adminOnlyTools: new Set([
@@ -83,6 +84,11 @@ O sistema mantém um "snapshot" de saldo acumulado por funcionário. Quando *que
 Formato de resposta:
 Saldo do dia: *+00:45*
 Saldo total acumulado: *+3h50*
+### Gráficos
+- *render_chart*: envie gráficos de ponto quando fizer sentido (admin)
+  - Horas trabalhadas por dia da semana → bar chart
+  - Evolução do saldo acumulado → line chart
+  - SEMPRE busque os dados reais com query_ponto antes de montar o gráfico
 ${adminTools}`;
   },
 };

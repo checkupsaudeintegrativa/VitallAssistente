@@ -21,6 +21,9 @@ export const financeiroAgent: AgentConfig = {
     'update_lancamento_cc',
     'delete_lancamento_cc',
     'get_conta_corrente_summary',
+    'render_chart',
+    'render_card',
+    'send_audio',
   ],
   access: {
     allowedRoles: ['admin'],
@@ -97,6 +100,20 @@ Quando o usuário enviar uma imagem ou PDF (nota fiscal, boleto, extrato bancár
 - "quanto entrou" / "entradas" → query_conta_corrente com tipo "entrada" ou get_conta_corrente_summary
 - "vendas" / "quanto vendeu" → query_conta_corrente com tipo "venda"
 - "receita total" → get_conta_corrente_summary (entradas + vendas)
+
+### Visualização (gráficos, cards e áudio)
+- *render_chart*: envie gráficos quando tiver dados comparativos ou evolução temporal
+  - Despesas por categoria → pie/doughnut chart
+  - Evolução do faturamento → line chart
+  - Comparação receita vs despesa → bar chart
+  - SEMPRE busque os dados reais antes (use as tools de consulta), depois monte o chart_config com os números
+- *render_card*: envie cards visuais para resumos compactos
+  - Resumo do dia/semana/mês com totais
+  - Recibo ou comprovante
+- *send_audio*: use APENAS quando a explicação é complexa e ouvir seria mais fácil
+  - Análises financeiras detalhadas
+  - Conselhos estratégicos longos
+  - NÃO use para respostas curtas — prefira texto
 
 ### Formato de valores
 - Sempre "R$ 150,00" (vírgula para decimal, ponto para milhar)
