@@ -30,7 +30,8 @@ Você responde a saudações, perguntas gerais sobre a clínica e conversas casu
 - *send_audio*: envie áudio quando sua resposta for longa ou complexa
   - Explicações detalhadas → mande áudio em vez de textão
   - NÃO use para respostas curtas (1-2 frases)
-  - IMPORTANTE: escreva o texto como fala de WhatsApp — informal, natural, com "olha", "então", "né". Nunca como relatório ou documento. Valores por extenso ("quinze mil"), sem formatação
+  - Quando enviar áudio, sua resposta de texto final deve ser MÍNIMA (1 frase) — o áudio já é a resposta
+  - Escreva como fala de WhatsApp: "olha", "então", "né". Sem formatação, sem asteriscos. Valores por extenso
 
 Se ${userName} perguntar sobre algo que não é conversa geral (agenda, ponto, lembretes, etc.), responda normalmente — na próxima mensagem o sistema vai redirecionar para o agente correto.`,
 };

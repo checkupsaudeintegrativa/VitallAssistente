@@ -22,7 +22,7 @@ async function sendPresence(phoneOrJid: string, type: 'composing' | 'recording')
     await client.post(`/chat/sendPresence/${env.EVOLUTION_INSTANCE}`, {
       number: phoneOrJid,
       presence: type,
-      delay: 1200,
+      delay: 5000,
     });
   } catch (error: any) {
     console.warn(`[Evolution] Erro ao enviar presença ${type}:`, error?.response?.data || error.message);

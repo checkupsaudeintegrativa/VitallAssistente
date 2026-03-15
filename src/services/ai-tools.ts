@@ -3153,13 +3153,16 @@ async function executeSendAudio(phone: string, text: string): Promise<string> {
   if (!phone) return JSON.stringify({ error: 'Parâmetro phone é obrigatório' });
   if (!text) return JSON.stringify({ error: 'Parâmetro text é obrigatório' });
 
+  // Limpar qualquer formatação markdown que a IA tenha deixado escapar
+  const cleanText = stripMarkdownForSpeech(text);
+
   // Trocar presença para "gravando áudio..." (usa o loop existente do chatbot, sem criar novo)
   const presence = evolution.getPresenceController(phone);
   if (presence) presence.setMode('recording');
 
   try {
     // Dividir texto longo em partes de ~500 chars (cada áudio fica ~30-45s)
-    const chunks = splitTextForAudio(text);
+    const chunks = splitTextForAudio(cleanText);
 
     for (let i = 0; i < chunks.length; i++) {
       const buffer = await ttsGen.generateAudio(chunks[i]);
@@ -3181,6 +3184,38 @@ async function executeSendAudio(phone: string, text: string): Promise<string> {
     console.error('[AI-Tools] Erro ao gerar áudio TTS:', err.message);
     return JSON.stringify({ error: 'Erro ao gerar áudio: ' + err.message });
   }
+}
+
+/** Remove formatação markdown/WhatsApp do texto para que o TTS não fale "asterisco" */
+function stripMarkdownForSpeech(text: string): string {
+  return text
+    .replace(/\*\*/g, '')          // **negrito** markdown
+    .replace(/\*/g, '')            // *negrito* WhatsApp
+    .replace(/_([^_]+)_/g, '$1')   // _itálico_
+    .replace(/~([^~]+)~/g, '$1')   // ~riscado~
+    .replace(/```[^`]*```/g, '')   // blocos de código
+    .replace(/`([^`]+)`/g, '$1')   // código inline
+    .replace(/^#+\s*/gm, '')       // # títulos markdown
+    .replace(/^[-•]\s*/gm, '')     // - bullets
+    .replace(/^\d+\.\s*/gm, '')    // 1. listas numeradas
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [links](url)
+    .replace(/R\$\s?([\d.,]+)/g, (_, v) => convertCurrencyToWords(v)) // R$ 15.430,00 → por extenso
+    .replace(/\n{3,}/g, '\n\n')    // múltiplas quebras
+    .trim();
+}
+
+/** Converte valor monetário para palavras aproximadas */
+function convertCurrencyToWords(value: string): string {
+  const num = parseFloat(value.replace(/\./g, '').replace(',', '.'));
+  if (isNaN(num)) return value + ' reais';
+  if (num >= 1000) {
+    const mil = Math.floor(num / 1000);
+    const rest = Math.round(num % 1000);
+    if (rest === 0) return `${mil} mil reais`;
+    if (rest < 100) return `${mil} mil e ${rest} reais`;
+    return `${mil} mil e ${rest} reais`;
+  }
+  return `${Math.round(num)} reais`;
 }
 
 /** Divide texto em partes de no máximo ~500 chars, quebrando em parágrafos ou frases */
