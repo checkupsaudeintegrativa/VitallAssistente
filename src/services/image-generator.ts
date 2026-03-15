@@ -217,3 +217,111 @@ export async function renderCard(options: CardOptions): Promise<Buffer> {
 
   return canvas.toBuffer('image/png');
 }
+
+// ── Confirmação de Lembrete ──
+
+/**
+ * Renderiza imagem de confirmação de lembrete (600×300).
+ * Layout: fundo branco, borda teal, checkmark verde, título + horário, logo Vitall.
+ */
+export async function renderReminderConfirmation(title: string, datetime: string): Promise<Buffer> {
+  const WIDTH = 600;
+  const HEIGHT = 300;
+
+  const canvas = createCanvas(WIDTH, HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  // Fundo branco
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Borda esquerda teal (accent bar)
+  ctx.fillStyle = VITALL_PRIMARY;
+  ctx.fillRect(0, 0, 5, HEIGHT);
+
+  // Barra superior teal
+  ctx.fillStyle = VITALL_PRIMARY;
+  ctx.fillRect(5, 0, WIDTH - 5, 6);
+
+  // ── Checkmark (círculo teal + check branco) ──
+  const circleX = 80;
+  const circleY = 120;
+  const circleR = 38;
+
+  // Sombra sutil
+  ctx.fillStyle = 'rgba(13, 148, 136, 0.15)';
+  ctx.beginPath();
+  ctx.arc(circleX, circleY + 3, circleR + 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Círculo teal
+  ctx.fillStyle = VITALL_PRIMARY;
+  ctx.beginPath();
+  ctx.arc(circleX, circleY, circleR, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Check branco (path)
+  ctx.strokeStyle = '#FFFFFF';
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  ctx.moveTo(circleX - 16, circleY + 2);
+  ctx.lineTo(circleX - 4, circleY + 14);
+  ctx.lineTo(circleX + 18, circleY - 12);
+  ctx.stroke();
+
+  // ── Textos ──
+  const textX = 140;
+
+  // "Lembrete criado!"
+  ctx.fillStyle = '#0f172a'; // slate-900
+  ctx.font = `bold 26px "${FONT_FAMILY}"`;
+  ctx.fillText('Lembrete criado!', textX, 108);
+
+  // Título do lembrete
+  ctx.fillStyle = '#334155'; // slate-700
+  ctx.font = `18px "${FONT_FAMILY}"`;
+  const truncTitle = title.length > 40 ? title.substring(0, 37) + '...' : title;
+  ctx.fillText(truncTitle, textX, 145);
+
+  // Horário formatado
+  const remindDate = new Date(datetime);
+  const horarioStr = remindDate.toLocaleString('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  // Ícone de relógio (texto) + horário
+  ctx.fillStyle = VITALL_PRIMARY;
+  ctx.font = `bold 16px "${FONT_FAMILY}"`;
+  ctx.fillText(`🕐  ${horarioStr}`, textX, 180);
+
+  // ── Branding bar inferior ──
+  ctx.fillStyle = '#f0fdfa'; // teal-50
+  ctx.fillRect(5, HEIGHT - 50, WIDTH - 5, 50);
+
+  // Linha separadora
+  ctx.fillStyle = '#e2e8f0';
+  ctx.fillRect(5, HEIGHT - 50, WIDTH - 5, 1);
+
+  // Logo Vitall
+  try {
+    const logo = await loadImage(LOGO_PATH);
+    const logoH = 28;
+    const logoW = (logo.width / logo.height) * logoH;
+    ctx.drawImage(logo, WIDTH - 28 - logoW, HEIGHT - 39, logoW, logoH);
+  } catch {
+    ctx.fillStyle = VITALL_PRIMARY;
+    ctx.font = `bold 12px "${FONT_FAMILY}"`;
+    const brandText = 'Vitall Odontologia';
+    const brandWidth = ctx.measureText(brandText).width;
+    ctx.fillText(brandText, WIDTH - 28 - brandWidth, HEIGHT - 20);
+  }
+
+  return canvas.toBuffer('image/png');
+}

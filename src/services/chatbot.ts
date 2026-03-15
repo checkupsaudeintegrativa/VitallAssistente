@@ -7,6 +7,7 @@ import { getToolsByNames, adaptCalendarTools } from './ai-tools';
 import { classifyIntent, setRecentAgentId } from '../agents/router';
 import { getAgent } from '../agents/registry';
 import { buildSharedPrompt } from '../agents/shared-prompt';
+import { generateAudio } from './tts-generator';
 import { env } from '../config/env';
 
 /** Tipos de mídia detectáveis no payload da Evolution API */
@@ -151,11 +152,39 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
     console.log(`[Chatbot] Histórico carregado: ${history.length} mensagens`);
 
+    // ── Saudação por áudio (primeira mensagem do dia) ──
+    let greetingSent = false;
+    const todayBRT = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    const hasAssistantToday = history.some((h) => {
+      const msgDate = new Date(h.created_at).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+      return msgDate === todayBRT && h.role === 'assistant';
+    });
+
+    if (!hasAssistantToday) {
+      try {
+        const hourNum = Number(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
+        const periodo = hourNum >= 5 && hourNum < 12 ? 'dia' : hourNum >= 12 && hourNum < 18 ? 'tarde' : 'noite';
+        const greetingText = `Excelente ${periodo}, ${senderName}! Tudo bem?`;
+
+        const audioBuffer = await generateAudio(greetingText);
+        const audioBase64 = audioBuffer.toString('base64');
+        await evolution.sendAudio(senderPhone, audioBase64, remoteJid);
+
+        greetingSent = true;
+        console.log(`[Chatbot] Saudação por áudio enviada para ${senderPhone}: "${greetingText}"`);
+      } catch (err: any) {
+        console.error('[Chatbot] Erro ao enviar saudação por áudio:', err.message);
+      }
+    }
+
     // Montar mensagens com contexto temporal (separadores de dia + horários)
     const contextMessages = buildContextMessages(history);
 
     // Montar contexto dinâmico
     let dynamicContext = `[Contexto] Quem está conversando: *${senderName}* (telefone: ${senderPhone}). Chame sempre pelo nome "${senderName}". Use o telefone no parâmetro "phone" ao criar lembretes.`;
+    if (greetingSent) {
+      dynamicContext += `\n[IMPORTANTE] Você JÁ enviou uma saudação por áudio ("Excelente dia/tarde/noite, ${senderName}! Tudo bem?"). NÃO repita saudação ou cumprimento no texto. Vá direto ao assunto respondendo a mensagem.`;
+    }
     if (imageStorageUrl) {
       dynamicContext += `\n[Imagem] URL pública da imagem enviada: ${imageStorageUrl} — use esta URL no parâmetro "image_url" de upload_patient_photo se for foto de paciente.`;
     }

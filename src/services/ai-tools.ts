@@ -1389,6 +1389,16 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
   const useCalendar = calConfig && gcal.isAvailable(calConfig);
   console.log(`[Reminder] user=${user?.name || 'null'}, calConfig=${JSON.stringify(calConfig)}, useCalendar=${useCalendar}, target=${targetCalendar || 'own'}`);
 
+  // Helper: envia imagem de confirmação (fire-and-forget)
+  const sendConfirmationImage = (targetPhone: string) => {
+    imageGen.renderReminderConfirmation(title, datetime)
+      .then((buf) => {
+        const b64 = buf.toString('base64');
+        return evolution.sendImage(targetPhone, b64);
+      })
+      .catch((err: any) => console.error('[Reminder] Erro ao enviar imagem de confirmação:', err.message));
+  };
+
   if (useCalendar) {
     const event = await gcal.createEvent(calConfig, {
       title,
@@ -1397,6 +1407,9 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
     });
 
     if (event) {
+      const resolvedPhone = phone || user?.phones?.[0];
+      if (resolvedPhone) sendConfirmationImage(resolvedPhone);
+
       const remindDate = new Date(datetime);
       return JSON.stringify({
         sucesso: true,
@@ -1415,6 +1428,9 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
   const result = await db.createReminder(title, datetime, phone, recurring);
 
   if (result) {
+    const resolvedPhone = phone || user?.phones?.[0];
+    if (resolvedPhone) sendConfirmationImage(resolvedPhone);
+
     const remindDate = new Date(datetime);
     return JSON.stringify({
       sucesso: true,
