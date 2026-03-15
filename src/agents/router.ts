@@ -125,7 +125,9 @@ export function classifyIntent(
     let score = 0;
     for (const kw of keywords) {
       const kwNorm = kw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      if (lower.includes(kwNorm)) score++;
+      // Frases (multi-palavra) são sinais mais fortes → peso 2
+      const weight = kw.includes(' ') ? 2 : 1;
+      if (lower.includes(kwNorm)) score += weight;
     }
     if (score > bestScore) {
       bestScore = score;
