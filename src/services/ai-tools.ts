@@ -2373,6 +2373,42 @@ function classifyEntrada(recipient: string, rawBody: string): EntradaClassificac
   return { descricao: `Entrada bancária de ${shortName}`, categoria: 'BANCO' };
 }
 
+// ── Dia útil: recebíveis de cartão só entram em dias úteis ──
+
+/** Retorna true se a data (YYYY-MM-DD) é dia útil (seg-sex, sem feriados nacionais fixos) */
+function isBusinessDay(dateStr: string): boolean {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dow = d.getDay(); // 0=dom, 6=sab
+  if (dow === 0 || dow === 6) return false;
+
+  // Feriados nacionais fixos (MM-DD)
+  const mmdd = dateStr.substring(5); // "MM-DD"
+  const feriadosFixos = [
+    '01-01', // Confraternização
+    '04-21', // Tiradentes
+    '05-01', // Dia do Trabalho
+    '09-07', // Independência
+    '10-12', // Nossa Senhora
+    '11-02', // Finados
+    '11-15', // Proclamação da República
+    '12-25', // Natal
+  ];
+  if (feriadosFixos.includes(mmdd)) return false;
+
+  return true;
+}
+
+/** Retorna o próximo dia útil a partir de dateStr (inclusive). Se já for dia útil, retorna ele mesmo. */
+function getDepositDate(dateStr: string): string {
+  let d = new Date(dateStr + 'T12:00:00');
+  for (let i = 0; i < 10; i++) {
+    const iso = d.toISOString().substring(0, 10);
+    if (isBusinessDay(iso)) return iso;
+    d.setDate(d.getDate() + 1);
+  }
+  return dateStr; // fallback
+}
+
 // ── Sync entradas bancárias (Gmail → lancamentos_conta_corrente) ──
 
 async function executeSyncBankEntradas(date: string): Promise<string> {
@@ -2459,6 +2495,12 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
   }
 
   // ── 2) Entradas de cartão: Excel (parcelas) + Clinicorp (paciente) ──
+  // Recebíveis de cartão só entram em dia útil
+  const depositDate = getDepositDate(date);
+  if (depositDate !== date) {
+    console.log(`[SyncBankEntradas] ${date} não é dia útil. Recebíveis de cartão entrarão em ${depositDate}`);
+  }
+
   if (hasCardFromGmail) {
     let cardImported = false;
 
@@ -2520,7 +2562,7 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
           : `${rec.bandeira} ${rec.tipo}${parcelaInfo}`;
 
         const row = {
-          data: date,
+          data: depositDate,
           hora: null,
           tipo: 'entrada',
           descricao,
@@ -2553,7 +2595,7 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
       } else {
         const classificacao = classifyEntrada(gmailCardTx.recipient, gmailCardTx.rawBody);
         const row = {
-          data: date,
+          data: depositDate,
           hora: null,
           tipo: 'entrada',
           descricao: classificacao.descricao,
@@ -2574,15 +2616,17 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
     }
   }
 
+  const depositInfo = depositDate !== date ? ` (depósito em ${depositDate} — próximo dia útil)` : '';
   return JSON.stringify({
     sincronizadas,
     ja_existentes: jaExistentes,
     valor_total: valorTotal,
+    data_deposito_cartao: depositDate !== date ? depositDate : undefined,
     detalhes_excel: detalhesExcel,
     fallback_motivo: !detalhesExcel && hasCardFromGmail ? (fallbackMotivo || 'Usado fallback Gmail') : undefined,
     lancamentos_criados: lancamentosCriados,
     mensagem: sincronizadas > 0
-      ? `${sincronizadas} entrada(s) importada(s) totalizando R$ ${valorTotal.toFixed(2)}${detalhesExcel ? ' (com parcelas detalhadas do Excel)' : ''}`
+      ? `${sincronizadas} entrada(s) importada(s) totalizando R$ ${valorTotal.toFixed(2)}${detalhesExcel ? ' (com parcelas detalhadas do Excel)' : ''}${depositInfo}`
       : jaExistentes > 0
         ? `Todas as ${jaExistentes} entrada(s) já foram importadas anteriormente`
         : 'Nenhuma entrada importada',
