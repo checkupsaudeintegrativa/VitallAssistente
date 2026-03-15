@@ -699,7 +699,7 @@ ROSCA: { "type": "doughnut", "data": { "labels": ["Pago","Em aberto"], "datasets
     type: 'function',
     function: {
       name: 'send_audio',
-      description: 'Converte texto em áudio e envia como mensagem de voz no WhatsApp. Use PROATIVAMENTE (sem o usuário pedir) quando a resposta for longa/complexa e ouvir seria mais fácil que ler. Ideal para análises, conselhos, explicações detalhadas. Pode enviar junto com texto e gráficos — cada um complementa. NÃO use para respostas curtas (1-2 frases). Escreva o texto de forma natural e conversacional.',
+      description: 'Converte texto em áudio e envia como mensagem de voz no WhatsApp. O sistema divide automaticamente textos longos em múltiplos áudios curtos (~30-45s cada). Use PROATIVAMENTE (sem o usuário pedir) quando a resposta for longa/complexa e ouvir seria mais fácil que ler. Ideal para análises, conselhos, explicações detalhadas. Pode enviar junto com texto e gráficos — cada um complementa. NÃO use para respostas curtas (1-2 frases). Escreva o texto de forma natural e conversacional, como se estivesse falando.',
       parameters: {
         type: 'object',
         properties: {
@@ -3153,21 +3153,77 @@ async function executeSendAudio(phone: string, text: string): Promise<string> {
   if (!phone) return JSON.stringify({ error: 'Parâmetro phone é obrigatório' });
   if (!text) return JSON.stringify({ error: 'Parâmetro text é obrigatório' });
 
-  // Mostrar "gravando áudio..." no WhatsApp enquanto gera o TTS
-  const stopRecording = evolution.startRecordingLoop(phone);
+  // Trocar presença para "gravando áudio..." (usa o loop existente do chatbot, sem criar novo)
+  const presence = evolution.getPresenceController(phone);
+  if (presence) presence.setMode('recording');
 
   try {
-    const buffer = await ttsGen.generateAudio(text);
-    const base64 = buffer.toString('base64');
-    stopRecording();
-    const sent = await evolution.sendAudio(phone, base64);
+    // Dividir texto longo em partes de ~500 chars (cada áudio fica ~30-45s)
+    const chunks = splitTextForAudio(text);
+
+    for (let i = 0; i < chunks.length; i++) {
+      // Mostrar "gravando..." antes de cada chunk
+      if (presence) presence.setMode('recording');
+
+      const buffer = await ttsGen.generateAudio(chunks[i]);
+      const base64 = buffer.toString('base64');
+
+      // Volta para "digitando..." enquanto envia
+      if (presence) presence.setMode('composing');
+      await evolution.sendAudio(phone, base64);
+    }
+
     return JSON.stringify({
-      sucesso: sent,
-      mensagem: sent ? 'Áudio enviado com sucesso' : 'Erro ao enviar áudio',
+      sucesso: true,
+      mensagem: chunks.length > 1
+        ? `${chunks.length} áudios enviados com sucesso`
+        : 'Áudio enviado com sucesso',
     });
   } catch (err: any) {
-    stopRecording();
+    if (presence) presence.setMode('composing');
     console.error('[AI-Tools] Erro ao gerar áudio TTS:', err.message);
     return JSON.stringify({ error: 'Erro ao gerar áudio: ' + err.message });
   }
+}
+
+/** Divide texto em partes de no máximo ~500 chars, quebrando em parágrafos ou frases */
+function splitTextForAudio(text: string, maxChars = 500): string[] {
+  if (text.length <= maxChars) return [text];
+
+  const chunks: string[] = [];
+  // Primeiro tenta dividir por parágrafos (dupla quebra de linha)
+  const paragraphs = text.split(/\n\n+/);
+
+  let current = '';
+  for (const para of paragraphs) {
+    if (current && (current.length + para.length + 2) > maxChars) {
+      chunks.push(current.trim());
+      current = para;
+    } else {
+      current = current ? current + '\n\n' + para : para;
+    }
+  }
+  if (current.trim()) chunks.push(current.trim());
+
+  // Se algum chunk ainda é muito longo, divide por frases
+  const result: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.length <= maxChars) {
+      result.push(chunk);
+    } else {
+      const sentences = chunk.split(/(?<=[.!?])\s+/);
+      let buf = '';
+      for (const s of sentences) {
+        if (buf && (buf.length + s.length + 1) > maxChars) {
+          result.push(buf.trim());
+          buf = s;
+        } else {
+          buf = buf ? buf + ' ' + s : s;
+        }
+      }
+      if (buf.trim()) result.push(buf.trim());
+    }
+  }
+
+  return result;
 }

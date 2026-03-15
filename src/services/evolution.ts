@@ -16,71 +16,62 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Envia status "digitando..." para o contato */
-export async function sendPresenceComposing(phoneOrJid: string): Promise<void> {
+/** Envia presença (composing ou recording) para o contato */
+async function sendPresence(phoneOrJid: string, type: 'composing' | 'recording'): Promise<void> {
   try {
     await client.post(`/chat/sendPresence/${env.EVOLUTION_INSTANCE}`, {
       number: phoneOrJid,
-      presence: 'composing',
+      presence: type,
       delay: 1200,
     });
   } catch (error: any) {
-    console.warn('[Evolution] Erro ao enviar presença:', error?.response?.data || error.message);
+    console.warn(`[Evolution] Erro ao enviar presença ${type}:`, error?.response?.data || error.message);
   }
 }
 
+/** Controladores de presença ativos, indexados por phone (para lookup do executeSendAudio) */
+const activePresence = new Map<string, { setMode: (m: 'composing' | 'recording') => void }>();
+
+/** Busca controlador de presença ativo para um telefone (usado por ai-tools para trocar composing↔recording) */
+export function getPresenceController(phone: string) {
+  return activePresence.get(phone);
+}
+
 /**
- * Inicia loop de "digitando..." que reenvia a cada intervalMs até chamar stop().
- * Retorna função stop() para encerrar o loop.
+ * Inicia loop de presença que reenvia a cada intervalMs até chamar stop().
+ * Suporta troca de modo (composing ↔ recording) em tempo real sem criar novo loop.
+ * @param phoneOrJid  Identificador para a API (remoteJid ou phone)
+ * @param phoneKey    Chave adicional para lookup (senderPhone) — permite ai-tools encontrar o controlador
  */
-export function startComposingLoop(phoneOrJid: string, intervalMs = 7000): () => void {
+export function startPresenceLoop(phoneOrJid: string, intervalMs = 4000, phoneKey?: string): () => void {
   let active = true;
+  let mode: 'composing' | 'recording' = 'composing';
+
+  const send = () => sendPresence(phoneOrJid, mode).catch(() => {});
 
   // Envia imediatamente
-  sendPresenceComposing(phoneOrJid).catch(() => {});
+  send();
 
   // Reenvia a cada intervalo
   const timer = setInterval(() => {
     if (!active) return;
-    sendPresenceComposing(phoneOrJid).catch(() => {});
+    send();
   }, intervalMs);
 
-  return () => {
-    active = false;
-    clearInterval(timer);
+  const controller = {
+    setMode: (m: 'composing' | 'recording') => {
+      mode = m;
+      send(); // troca instantânea
+    },
   };
-}
 
-/** Envia status "gravando áudio..." para o contato */
-export async function sendPresenceRecording(phoneOrJid: string): Promise<void> {
-  try {
-    await client.post(`/chat/sendPresence/${env.EVOLUTION_INSTANCE}`, {
-      number: phoneOrJid,
-      presence: 'recording',
-      delay: 1200,
-    });
-  } catch (error: any) {
-    console.warn('[Evolution] Erro ao enviar presença recording:', error?.response?.data || error.message);
-  }
-}
-
-/**
- * Inicia loop de "gravando áudio..." que reenvia a cada intervalMs até chamar stop().
- * Retorna função stop() para encerrar o loop.
- */
-export function startRecordingLoop(phoneOrJid: string, intervalMs = 7000): () => void {
-  let active = true;
-
-  sendPresenceRecording(phoneOrJid).catch(() => {});
-
-  const timer = setInterval(() => {
-    if (!active) return;
-    sendPresenceRecording(phoneOrJid).catch(() => {});
-  }, intervalMs);
+  // Registra por phoneKey para o executeSendAudio poder trocar o modo
+  if (phoneKey) activePresence.set(phoneKey, controller);
 
   return () => {
     active = false;
     clearInterval(timer);
+    if (phoneKey) activePresence.delete(phoneKey);
   };
 }
 

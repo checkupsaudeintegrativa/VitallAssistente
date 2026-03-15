@@ -165,8 +165,9 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
     let aiResponse: string;
 
-    // Inicia loop de "digitando..." que persiste até a resposta SER ENVIADA
-    const stopComposing = evolution.startComposingLoop(remoteJid);
+    // Inicia loop de presença que persiste até a resposta SER ENVIADA
+    // phoneKey=senderPhone permite ai-tools trocar composing↔recording sem criar loop paralelo
+    const stopComposing = evolution.startPresenceLoop(remoteJid, 4000, senderPhone);
 
     try {
       if (env.USE_MULTI_AGENT) {
