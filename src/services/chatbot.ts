@@ -164,7 +164,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       try {
         const hourNum = Number(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
         const periodo = hourNum >= 5 && hourNum < 12 ? 'dia' : hourNum >= 12 && hourNum < 18 ? 'tarde' : 'noite';
-        const greetingText = `Excelente ${periodo}, ${senderName}! Tudo bem?`;
+        const greetingText = `Excelente ${periodo} ${senderName}! Tudo bem?`;
 
         const audioBuffer = await generateAudio(greetingText);
         const audioBase64 = audioBuffer.toString('base64');
