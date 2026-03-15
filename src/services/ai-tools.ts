@@ -3153,15 +3153,20 @@ async function executeSendAudio(phone: string, text: string): Promise<string> {
   if (!phone) return JSON.stringify({ error: 'Parâmetro phone é obrigatório' });
   if (!text) return JSON.stringify({ error: 'Parâmetro text é obrigatório' });
 
+  // Mostrar "gravando áudio..." no WhatsApp enquanto gera o TTS
+  const stopRecording = evolution.startRecordingLoop(phone);
+
   try {
     const buffer = await ttsGen.generateAudio(text);
     const base64 = buffer.toString('base64');
+    stopRecording();
     const sent = await evolution.sendAudio(phone, base64);
     return JSON.stringify({
       sucesso: sent,
       mensagem: sent ? 'Áudio enviado com sucesso' : 'Erro ao enviar áudio',
     });
   } catch (err: any) {
+    stopRecording();
     console.error('[AI-Tools] Erro ao gerar áudio TTS:', err.message);
     return JSON.stringify({ error: 'Erro ao gerar áudio: ' + err.message });
   }

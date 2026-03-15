@@ -51,6 +51,39 @@ export function startComposingLoop(phoneOrJid: string, intervalMs = 7000): () =>
   };
 }
 
+/** Envia status "gravando áudio..." para o contato */
+export async function sendPresenceRecording(phoneOrJid: string): Promise<void> {
+  try {
+    await client.post(`/chat/sendPresence/${env.EVOLUTION_INSTANCE}`, {
+      number: phoneOrJid,
+      presence: 'recording',
+      delay: 1200,
+    });
+  } catch (error: any) {
+    console.warn('[Evolution] Erro ao enviar presença recording:', error?.response?.data || error.message);
+  }
+}
+
+/**
+ * Inicia loop de "gravando áudio..." que reenvia a cada intervalMs até chamar stop().
+ * Retorna função stop() para encerrar o loop.
+ */
+export function startRecordingLoop(phoneOrJid: string, intervalMs = 7000): () => void {
+  let active = true;
+
+  sendPresenceRecording(phoneOrJid).catch(() => {});
+
+  const timer = setInterval(() => {
+    if (!active) return;
+    sendPresenceRecording(phoneOrJid).catch(() => {});
+  }, intervalMs);
+
+  return () => {
+    active = false;
+    clearInterval(timer);
+  };
+}
+
 /** Resolve o identificador de destino: usa remoteJid para LIDs, senão formata o telefone */
 function resolveNumber(phone: string, remoteJid?: string): string | null {
   // Se temos um remoteJid @lid, usar ele diretamente (WhatsApp pessoal)

@@ -165,113 +165,107 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
 
     let aiResponse: string;
 
-    if (env.USE_MULTI_AGENT) {
-      // ── Sistema Multi-Agente ──
+    // Inicia loop de "digitando..." que persiste até a resposta SER ENVIADA
+    const stopComposing = evolution.startComposingLoop(remoteJid);
 
-      // 1. Classificar intent
-      const routerResult = classifyIntent(userContent, mediaType, senderPhone);
-      const agent = getAgent(routerResult.agentId);
+    try {
+      if (env.USE_MULTI_AGENT) {
+        // ── Sistema Multi-Agente ──
 
-      console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)}, model: ${agent.model || 'gpt-4o'})`);
+        // 1. Classificar intent
+        const routerResult = classifyIntent(userContent, mediaType, senderPhone);
+        const agent = getAgent(routerResult.agentId);
 
-      // 2. Checar acesso no agente
-      if (agent.access.allowedRoles && !agent.access.allowedRoles.includes(userConfig?.role || 'staff')) {
-        const deniedMsg = agent.access.deniedMessage || 'Você não tem acesso a essa funcionalidade.';
-        await db.saveChatMessage(senderPhone, 'assistant', deniedMsg, 'text');
-        await evolution.sendTextReply(senderPhone, `> *Vitall:*\n\n${deniedMsg}`, messageId, remoteJid);
-        return;
-      }
+        console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)}, model: ${agent.model || 'gpt-4o'})`);
 
-      // 3. Montar tools do agente (+ get_current_datetime universal)
-      let agentToolNames = [...agent.toolNames];
-      if (!agentToolNames.includes('get_current_datetime')) {
-        agentToolNames.push('get_current_datetime');
-      }
+        // 2. Checar acesso no agente
+        if (agent.access.allowedRoles && !agent.access.allowedRoles.includes(userConfig?.role || 'staff')) {
+          const deniedMsg = agent.access.deniedMessage || 'Você não tem acesso a essa funcionalidade.';
+          await db.saveChatMessage(senderPhone, 'assistant', deniedMsg, 'text');
+          await evolution.sendTextReply(senderPhone, `> *Vitall:*\n\n${deniedMsg}`, messageId, remoteJid);
+          return;
+        }
 
-      // Filtrar adminOnlyTools para staff
-      if (agent.adminOnlyTools && userConfig?.role !== 'admin') {
-        agentToolNames = agentToolNames.filter((name) => !agent.adminOnlyTools!.has(name));
-      }
+        // 3. Montar tools do agente (+ get_current_datetime universal)
+        let agentToolNames = [...agent.toolNames];
+        if (!agentToolNames.includes('get_current_datetime')) {
+          agentToolNames.push('get_current_datetime');
+        }
 
-      let agentTools = getToolsByNames(agentToolNames);
+        // Filtrar adminOnlyTools para staff
+        if (agent.adminOnlyTools && userConfig?.role !== 'admin') {
+          agentToolNames = agentToolNames.filter((name) => !agent.adminOnlyTools!.has(name));
+        }
 
-      // Adaptar tools de lembrete para Google Calendar
-      if (agent.id === 'lembretes') {
-        agentTools = adaptCalendarTools(agentTools, userConfig);
-      }
+        let agentTools = getToolsByNames(agentToolNames);
 
-      // 4. Montar prompt: shared + agent-specific
-      const sharedPrompt = buildSharedPrompt(senderName);
-      const agentPrompt = agent.buildPrompt(senderName, userConfig?.role, userConfig?.features);
-      const fullSystemPrompt = sharedPrompt + '\n\n' + agentPrompt;
+        // Adaptar tools de lembrete para Google Calendar
+        if (agent.id === 'lembretes') {
+          agentTools = adaptCalendarTools(agentTools, userConfig);
+        }
 
-      const messages: ChatMessage[] = [
-        { role: 'system', content: fullSystemPrompt },
-        { role: 'system', content: dynamicContext },
-        ...contextMessages,
-      ];
+        // 4. Montar prompt: shared + agent-specific
+        const sharedPrompt = buildSharedPrompt(senderName);
+        const agentPrompt = agent.buildPrompt(senderName, userConfig?.role, userConfig?.features);
+        const fullSystemPrompt = sharedPrompt + '\n\n' + agentPrompt;
 
-      const lastHistoryMsg = history[history.length - 1];
-      if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
-        messages.push({ role: 'user', content: userContent });
-      }
+        const messages: ChatMessage[] = [
+          { role: 'system', content: fullSystemPrompt },
+          { role: 'system', content: dynamicContext },
+          ...contextMessages,
+        ];
 
-      // Inicia loop de "digitando..." que persiste até a resposta ficar pronta
-      const stopComposing = evolution.startComposingLoop(remoteJid);
+        const lastHistoryMsg = history[history.length - 1];
+        if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
+          messages.push({ role: 'user', content: userContent });
+        }
 
-      try {
         // Quando há mídia (foto/PDF), forçar gpt-5.4 para melhor visão
         const effectiveModel = imageBase64 ? 'gpt-5.4' : (agent.model || 'gpt-4o');
 
         aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, effectiveModel);
-      } finally {
-        stopComposing();
-      }
 
-      // 5. Salvar agente usado para continuidade de contexto
-      setRecentAgentId(senderPhone, routerResult.agentId);
+        // 5. Salvar agente usado para continuidade de contexto
+        setRecentAgentId(senderPhone, routerResult.agentId);
 
-    } else {
-      // ── Fluxo legado (prompt monolítico) ──
-
-      const messages: ChatMessage[] = [
-        { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role, userConfig?.features) },
-        { role: 'system', content: dynamicContext },
-        ...contextMessages,
-      ];
-
-      const lastHistoryMsg = history[history.length - 1];
-      if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
-        messages.push({ role: 'user', content: userContent });
-      }
-
-      const stopComposing = evolution.startComposingLoop(remoteJid);
-
-      try {
-        aiResponse = await chatWithTools(messages, undefined, imageBase64, imageMime, userConfig);
-      } finally {
-        stopComposing();
-      }
-    }
-
-    // Salvar resposta da IA no histórico
-    await db.saveChatMessage(senderPhone, 'assistant', aiResponse, 'text');
-
-    // Separar em múltiplas mensagens se a IA usou o marcador ---SEPARAR---
-    const parts = aiResponse.split(/---SEPARAR---/i).map((p) => p.trim()).filter(Boolean);
-
-    // Primeira mensagem como reply (citando a original), demais como mensagens normais
-    for (let i = 0; i < parts.length; i++) {
-      const prefixed = `> *Vitall:*\n\n${parts[i]}`;
-
-      if (i === 0) {
-        await evolution.sendTextReply(senderPhone, prefixed, messageId, remoteJid);
       } else {
-        await evolution.sendText(senderPhone, prefixed, remoteJid);
-      }
-    }
+        // ── Fluxo legado (prompt monolítico) ──
 
-    console.log(`[Chatbot] ${parts.length} msg(s) enviada(s) para ${senderPhone}: "${aiResponse.substring(0, 100)}"`);
+        const messages: ChatMessage[] = [
+          { role: 'system', content: buildSystemPrompt(senderName, userConfig?.role, userConfig?.features) },
+          { role: 'system', content: dynamicContext },
+          ...contextMessages,
+        ];
+
+        const lastHistoryMsg = history[history.length - 1];
+        if (!lastHistoryMsg || lastHistoryMsg.content !== userContent || lastHistoryMsg.role !== 'user') {
+          messages.push({ role: 'user', content: userContent });
+        }
+
+        aiResponse = await chatWithTools(messages, undefined, imageBase64, imageMime, userConfig);
+      }
+
+      // Salvar resposta da IA no histórico
+      await db.saveChatMessage(senderPhone, 'assistant', aiResponse, 'text');
+
+      // Separar em múltiplas mensagens se a IA usou o marcador ---SEPARAR---
+      const parts = aiResponse.split(/---SEPARAR---/i).map((p) => p.trim()).filter(Boolean);
+
+      // Primeira mensagem como reply (citando a original), demais como mensagens normais
+      for (let i = 0; i < parts.length; i++) {
+        const prefixed = `> *Vitall:*\n\n${parts[i]}`;
+
+        if (i === 0) {
+          await evolution.sendTextReply(senderPhone, prefixed, messageId, remoteJid);
+        } else {
+          await evolution.sendText(senderPhone, prefixed, remoteJid);
+        }
+      }
+
+      console.log(`[Chatbot] ${parts.length} msg(s) enviada(s) para ${senderPhone}: "${aiResponse.substring(0, 100)}"`);
+    } finally {
+      stopComposing();
+    };
   } catch (error: any) {
     console.error(`[Chatbot] Erro ao processar mensagem de ${senderPhone}:`, error.message);
 
