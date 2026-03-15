@@ -84,10 +84,11 @@ export async function chatWithTools(
 
       // Modelos gpt-5.x usam max_completion_tokens; gpt-4o usa max_tokens
       const isNewModel = resolvedModel.startsWith('gpt-5') || resolvedModel.startsWith('o');
+      const maxTokens = isNewModel ? 4096 : 2000;
       const response = await openai.chat.completions.create({
         model: resolvedModel,
         temperature: 0.4,
-        ...(isNewModel ? { max_completion_tokens: 1000 } : { max_tokens: 1000 }),
+        ...(isNewModel ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
         messages: finalMessages,
         tools: resolvedTools as any,
         tool_choice: 'auto',
