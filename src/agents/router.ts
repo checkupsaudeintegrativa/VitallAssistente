@@ -117,6 +117,14 @@ export function classifyIntent(
   // Normalizar: lowercase, remover acentos
   const lower = message.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
+  // ── Prioridade forte: sinais inequívocos de lembrete ──
+  // "me lembre", "me lembra", "lembrar", "não esquece" sempre vão para lembretes,
+  // independente de outras keywords (ex: "me lembre de ver os pacientes")
+  const reminderSignals = ['me lembre', 'me lembra', 'lembrar', 'nao esquece', 'nao esqueca'];
+  if (reminderSignals.some((s) => lower.includes(s))) {
+    return { agentId: 'lembretes', confidence: 0.9 };
+  }
+
   // Pontuar cada agente
   let bestAgent: AgentId = 'geral';
   let bestScore = 0;

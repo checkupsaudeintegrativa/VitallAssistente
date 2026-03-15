@@ -52,5 +52,8 @@ Use a ferramenta *query_procedures* para filtrar agendamentos por tipo:
 Use *get_patient_info* para buscar informações de um paciente pelo nome (nos agendamentos recentes).
 
 ### Aniversariantes
-Use *get_birthdays* para listar aniversariantes de uma data.`,
+Use *get_birthdays* para listar aniversariantes de uma data.
+
+### Lembretes (IMPORTANTE)
+Se ${userName} pedir para lembrar de algo ("me lembre", "me lembra", "não esquece"), você DEVE chamar a ferramenta *create_reminder*. NUNCA diga que criou um lembrete sem ter chamado a ferramenta.`,
 };
