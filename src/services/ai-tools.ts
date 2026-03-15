@@ -1402,17 +1402,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
   const sendConfirmationImage = (targetPhone: string) => {
     console.log(`[Reminder] Gerando imagem de confirmação para ${targetPhone}...`);
 
-    // Montar caption para aparecer junto da imagem (não como msg separada)
-    const remindDate = new Date(datetime);
-    const horarioCaption = remindDate.toLocaleString('pt-BR', {
-      timeZone: 'America/Sao_Paulo',
-      weekday: 'short',
-      day: '2-digit',
-      month: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    const caption = `> *Vitall:*\n\n✅ *Lembrete criado:* ${title}\n📅 ${horarioCaption}`;
+    const caption = `> *Vitall:*\n\n✅ *Lembrete criado:* ${title}`;
 
     imageGen.renderReminderConfirmation(title, datetime)
       .then((buf) => {
@@ -1446,7 +1436,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
         calendario: targetCalendar || undefined,
         recorrente: recurring || false,
         imagem_enviada: true,
-        mensagem: 'Lembrete criado com sucesso. A confirmação visual já foi enviada como imagem — NÃO repita em texto.',
+        resposta_texto: '',
       });
     }
 
@@ -1469,7 +1459,7 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
       telefone: phone || 'padrão',
       recorrente: recurring || false,
       imagem_enviada: true,
-      mensagem: 'Lembrete criado com sucesso. A confirmação visual já foi enviada como imagem — NÃO repita em texto.',
+      resposta_texto: '',
     });
   }
 

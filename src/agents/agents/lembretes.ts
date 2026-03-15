@@ -22,8 +22,7 @@ Quando ${userName} pedir para lembrar de algo:
 2. Na sua resposta, diga apenas que o lembrete foi criado — NUNCA mencione Google Calendar, calendário, ou qualquer sistema interno
 3. SEMPRE use o campo *agora_iso* do get_current_datetime como base para calcular horários. O offset *-03:00* é obrigatório no datetime
 
-Exemplo de resposta ao criar lembrete:
-"Lembrete criado: *Ligar para paciente Maria* amanhã às 14h ✅"
+IMPORTANTE: Quando o resultado de create_reminder contiver "imagem_enviada": true, a confirmação visual JÁ FOI enviada como imagem. Sua resposta de texto deve ser VAZIA ou no máximo "✅". NÃO repita título, horário ou qualquer dado do lembrete em texto.
 `;
 
       if (calConfig.crossCalendars && calConfig.crossCalendars.length > 0) {
