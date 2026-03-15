@@ -360,6 +360,10 @@ async function decryptAndParseExcel(buffer: Buffer): Promise<RecebívelParcela[]
     const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 });
 
     console.log(`[Gmail] Excel: ${rows.length} linhas, colunas: ${rows[0]?.join(', ')}`);
+    // Debug: mostra todas as linhas para diagnosticar formato
+    for (let r = 0; r < Math.min(rows.length, 10); r++) {
+      console.log(`[Gmail] Excel row[${r}]: ${JSON.stringify(rows[r])}`);
+    }
 
     const parcelas: RecebívelParcela[] = [];
     for (const row of rows) {
