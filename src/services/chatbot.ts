@@ -216,12 +216,17 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         messages.push({ role: 'user', content: userContent });
       }
 
-      try { await evolution.sendPresenceComposing(remoteJid); } catch {}
+      // Inicia loop de "digitando..." que persiste até a resposta ficar pronta
+      const stopComposing = evolution.startComposingLoop(remoteJid);
 
-      // Quando há mídia (foto/PDF), forçar gpt-5.4 para melhor visão
-      const effectiveModel = imageBase64 ? 'gpt-5.4' : (agent.model || 'gpt-4o');
+      try {
+        // Quando há mídia (foto/PDF), forçar gpt-5.4 para melhor visão
+        const effectiveModel = imageBase64 ? 'gpt-5.4' : (agent.model || 'gpt-4o');
 
-      aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, effectiveModel);
+        aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, effectiveModel);
+      } finally {
+        stopComposing();
+      }
 
       // 5. Salvar agente usado para continuidade de contexto
       setRecentAgentId(senderPhone, routerResult.agentId);
@@ -240,9 +245,13 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         messages.push({ role: 'user', content: userContent });
       }
 
-      try { await evolution.sendPresenceComposing(remoteJid); } catch {}
+      const stopComposing = evolution.startComposingLoop(remoteJid);
 
-      aiResponse = await chatWithTools(messages, undefined, imageBase64, imageMime, userConfig);
+      try {
+        aiResponse = await chatWithTools(messages, undefined, imageBase64, imageMime, userConfig);
+      } finally {
+        stopComposing();
+      }
     }
 
     // Salvar resposta da IA no histórico
@@ -258,8 +267,6 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       if (i === 0) {
         await evolution.sendTextReply(senderPhone, prefixed, messageId, remoteJid);
       } else {
-        // Mostrar "digitando..." antes de cada mensagem adicional
-        try { await evolution.sendPresenceComposing(remoteJid); } catch {}
         await evolution.sendText(senderPhone, prefixed, remoteJid);
       }
     }
