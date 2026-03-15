@@ -230,7 +230,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         let agentTools = getToolsByNames(agentToolNames);
 
         // Adaptar tools de lembrete para Google Calendar
-        if (agent.id === 'lembretes') {
+        if (agentToolNames.includes('create_reminder')) {
           agentTools = adaptCalendarTools(agentTools, userConfig);
         }
 

@@ -9,6 +9,9 @@ export const agendaAgent: AgentConfig = {
     'get_birthdays',
     'query_procedures',
     'get_patient_info',
+    'create_reminder',
+    'list_reminders',
+    'confirm_reminder_done',
   ],
   access: {},
   buildPrompt: (userName) => `## Agente: Agenda e Pacientes
