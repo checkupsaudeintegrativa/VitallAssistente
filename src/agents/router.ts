@@ -50,6 +50,10 @@ const INTENT_KEYWORDS: Record<Exclude<AgentId, 'geral'>, string[]> = {
     'conselho', 'opiniao', 'opinião', 'sugestao', 'sugestão',
     'margem', 'lucro liquido', 'lucro líquido', 'rentabilidade',
     'fluxo de caixa', 'previsao', 'previsão',
+    // Orçamentos
+    'orçamento', 'orcamento', 'orçamentos', 'orcamentos',
+    'budget', 'estimate', 'conversão de orçamento', 'conversao de orcamento',
+    'ticket médio', 'ticket medio',
   ],
   ponto: [
     'ponto', 'registro de ponto', 'registros de ponto',

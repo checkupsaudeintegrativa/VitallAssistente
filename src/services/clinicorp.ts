@@ -67,6 +67,19 @@ export async function listPayments(from: string, to: string, dateType?: string) 
   return data;
 }
 
+/** Lista orçamentos (estimates) num intervalo de datas */
+export async function listBudgets(from: string, to: string, groupBy?: string) {
+  const params: Record<string, string> = {
+    from,
+    to,
+    business_id: env.CLINICORP_BUSINESS_ID,
+  };
+  if (groupBy) params.group_by = groupBy;
+
+  const { data } = await client.get('/sales/estimates_and_conversion', { params });
+  return data;
+}
+
 /** Lista resumo financeiro num intervalo de datas */
 export async function listFinancialSummary(from: string, to: string) {
   const { data } = await client.get('/financial/list_summary', {

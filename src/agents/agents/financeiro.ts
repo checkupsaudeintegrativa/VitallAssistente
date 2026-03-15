@@ -7,6 +7,7 @@ export const financeiroAgent: AgentConfig = {
   toolNames: [
     'query_payments',
     'get_financial_summary',
+    'query_budgets',
     'query_contas_pagar',
     'create_conta_pagar',
     'update_conta_pagar',
@@ -91,6 +92,13 @@ Quando o usuário enviar uma imagem ou PDF (nota fiscal, boleto, extrato bancár
 - Se for extrato: liste as transações identificadas
 - Se não conseguir ler com clareza, informe o que conseguiu extrair e peça confirmação
 
+### 6. Orçamentos (Clinicorp)
+- *query_budgets*: consulta orçamentos por período — retorna total de orçamentos, valor total, ticket médio, taxa de conversão
+- Use group_by="month" para comparar meses
+- "quanto tem em orçamento?" → query_budgets do mês atual
+- "conversão de orçamentos" → query_budgets e analise a taxa
+- "orçamentos aprovados vs pendentes" → query_budgets e compare os status
+
 ### Regras importantes
 - Antes de **criar**, **editar** ou **excluir** uma conta ou lançamento, confirme os dados com o usuário
 - Ao listar contas ou lançamentos, mostre o ID resumido (primeiros 8 chars) para referência
@@ -169,5 +177,8 @@ O texto vira voz. Escreva EXATAMENTE como uma pessoa manda áudio no WhatsApp:
 - "importa entradas do banco de hoje" → sync_bank_entradas
 - "importa vendas do Clinicorp de hoje" → sync_clinicorp_payments
 - "sincronizar recebimentos" → sync_bank_entradas + sync_clinicorp_payments
-- "receita total do mês" → get_conta_corrente_summary`,
+- "receita total do mês" → get_conta_corrente_summary
+- "orçamentos do mês" → query_budgets
+- "conversão de orçamentos de janeiro a março" → query_budgets com group_by=month
+- "ticket médio dos orçamentos" → query_budgets`,
 };

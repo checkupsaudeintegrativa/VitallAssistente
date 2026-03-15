@@ -30,7 +30,7 @@ export interface ToolDefinition {
 
 /** Ferramentas restritas a admin (não disponíveis para staff) */
 const FINANCIAL_TOOLS = new Set([
-  'query_payments', 'get_financial_summary',
+  'query_payments', 'get_financial_summary', 'query_budgets',
   'query_contas_pagar', 'create_conta_pagar', 'update_conta_pagar',
   'dar_baixa_conta', 'delete_conta_pagar', 'get_contas_summary',
   'sync_bank_transactions',
@@ -141,6 +141,22 @@ export const toolDefinitions: ToolDefinition[] = [
         properties: {
           date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD' },
           date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD' },
+        },
+        required: ['date_from', 'date_to'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'query_budgets',
+      description: 'Consulta orçamentos (estimates) do Clinicorp num intervalo de datas. Retorna dados de todos os status: total de orçamentos, valor total, ticket médio, taxa de conversão. Use para "orçamentos do mês", "quanto tem em orçamento", "conversão de orçamentos".',
+      parameters: {
+        type: 'object',
+        properties: {
+          date_from: { type: 'string', description: 'Data início no formato YYYY-MM-DD' },
+          date_to: { type: 'string', description: 'Data fim no formato YYYY-MM-DD' },
+          group_by: { type: 'string', description: 'Agrupar por período. Use "month" para agrupar por mês. Omita para dados totais.' },
         },
         required: ['date_from', 'date_to'],
       },
@@ -1086,6 +1102,9 @@ export async function executeTool(name: string, args: Record<string, any>, user?
       case 'get_financial_summary':
         return executeGetFinancialSummary(args.date_from, args.date_to);
 
+      case 'query_budgets':
+        return executeQueryBudgets(args.date_from, args.date_to, args.group_by);
+
       case 'create_reminder':
         return executeCreateReminder(args.title, args.datetime, args.phone, args.recurring, user, args.target_calendar);
 
@@ -1391,6 +1410,16 @@ async function executeGetFinancialSummary(dateFrom: string, dateTo: string): Pro
   }
 
   return JSON.stringify(raw || { error: 'Sem dados financeiros para o período' });
+}
+
+async function executeQueryBudgets(dateFrom: string, dateTo: string, groupBy?: string): Promise<string> {
+  const raw = await clinicorp.listBudgets(dateFrom, dateTo, groupBy);
+  const data = Array.isArray(raw) ? raw : [raw];
+  return JSON.stringify({
+    periodo: { de: dateFrom, ate: dateTo },
+    agrupamento: groupBy || 'total',
+    dados: data,
+  });
 }
 
 async function executeCreateReminder(title: string, datetime: string, phone?: string, recurring?: boolean, user?: UserConfig | null, targetCalendar?: string): Promise<string> {
