@@ -296,10 +296,26 @@ export async function renderReminderConfirmation(title: string, datetime: string
     minute: '2-digit',
   });
 
-  // Ícone de relógio (texto) + horário
+  // Ícone de relógio (desenhado, sem emoji) + horário
+  const clockX = textX + 10;
+  const clockY = 173;
+  const clockR = 9;
+  ctx.strokeStyle = VITALL_PRIMARY;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(clockX, clockY, clockR, 0, Math.PI * 2);
+  ctx.stroke();
+  // Ponteiros
+  ctx.beginPath();
+  ctx.moveTo(clockX, clockY);
+  ctx.lineTo(clockX, clockY - 6); // ponteiro hora (12h)
+  ctx.moveTo(clockX, clockY);
+  ctx.lineTo(clockX + 5, clockY + 2); // ponteiro minuto (3h)
+  ctx.stroke();
+
   ctx.fillStyle = VITALL_PRIMARY;
   ctx.font = `bold 16px "${FONT_FAMILY}"`;
-  ctx.fillText(`🕐  ${horarioStr}`, textX, 180);
+  ctx.fillText(horarioStr, textX + 28, 180);
 
   // ── Branding bar inferior ──
   ctx.fillStyle = '#f0fdfa'; // teal-50

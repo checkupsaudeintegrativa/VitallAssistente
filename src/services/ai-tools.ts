@@ -1391,12 +1391,17 @@ async function executeCreateReminder(title: string, datetime: string, phone?: st
 
   // Helper: envia imagem de confirmação (fire-and-forget)
   const sendConfirmationImage = (targetPhone: string) => {
+    console.log(`[Reminder] Gerando imagem de confirmação para ${targetPhone}...`);
     imageGen.renderReminderConfirmation(title, datetime)
       .then((buf) => {
+        console.log(`[Reminder] Imagem gerada (${buf.length} bytes), enviando...`);
         const b64 = buf.toString('base64');
         return evolution.sendImage(targetPhone, b64);
       })
-      .catch((err: any) => console.error('[Reminder] Erro ao enviar imagem de confirmação:', err.message));
+      .then((sent) => {
+        console.log(`[Reminder] Imagem de confirmação enviada: ${sent}`);
+      })
+      .catch((err: any) => console.error('[Reminder] Erro ao enviar imagem de confirmação:', err.message, err.stack));
   };
 
   if (useCalendar) {
