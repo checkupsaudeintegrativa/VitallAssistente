@@ -3216,6 +3216,8 @@ function stripMarkdownForSpeech(text: string): string {
     .replace(/^\d+\.\s*/gm, '')    // 1. listas numeradas
     .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // [links](url)
     .replace(/R\$\s?([\d.,]+)/g, (_, v) => convertCurrencyToWords(v)) // R$ 15.430,00 → por extenso
+    .replace(/\bDra\.\s?/gi, 'Doutora ')  // Dra. → Doutora (TTS)
+    .replace(/\bDr\.\s?/gi, 'Doutor ')    // Dr. → Doutor (TTS)
     .replace(/\n{3,}/g, '\n\n')    // múltiplas quebras
     .trim();
 }

@@ -164,7 +164,9 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
       try {
         const hourNum = Number(new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: 'numeric', hour12: false }));
         const periodo = hourNum >= 5 && hourNum < 12 ? 'dia' : hourNum >= 12 && hourNum < 18 ? 'tarde' : 'noite';
-        const greetingText = `Excelente ${periodo} ${senderName}! Tudo bem?`;
+        // Para TTS: "Dra." → "Doutora", "Dr." → "Doutor" (senão fala "dra" literal)
+        const spokenName = senderName.replace(/\bDra\.\s?/gi, 'Doutora ').replace(/\bDr\.\s?/gi, 'Doutor ').trim();
+        const greetingText = `Excelente ${periodo} ${spokenName} tudo bem?`;
 
         const audioBuffer = await generateAudio(greetingText);
         const audioBase64 = audioBuffer.toString('base64');
