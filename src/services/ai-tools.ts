@@ -2594,23 +2594,34 @@ async function executeSyncBankEntradas(date: string): Promise<string> {
         jaExistentes++;
       } else {
         const classificacao = classifyEntrada(gmailCardTx.recipient, gmailCardTx.rawBody);
+
+        // Extrair valor líquido do email (pós taxas da maquininha)
+        // O email diz "Valor líquido das vendas (pós taxas): R$ 297,54"
+        const netMatch = gmailCardTx.rawBody.match(/valor\s+l[ií]quido[^R]*R\$\s*([\d.,]+)/i);
+        const valorFallback = netMatch
+          ? parseFloat(netMatch[1].replace(/\./g, '').replace(',', '.'))
+          : gmailCardTx.amount;
+        if (netMatch) {
+          console.log(`[SyncBankEntradas] Fallback: valor líquido R$ ${valorFallback.toFixed(2)} (bruto: R$ ${gmailCardTx.amount.toFixed(2)})`);
+        }
+
         const row = {
           data: depositDate,
           hora: null,
           tipo: 'entrada',
           descricao: classificacao.descricao,
           contraparte: gmailCardTx.recipient || null,
-          valor: gmailCardTx.amount,
+          valor: valorFallback,
           categoria: classificacao.categoria,
-          observacoes: `[${marker}] Importado automaticamente do C6 Bank (fallback)`,
+          observacoes: `[${marker}] Bruto: R$ ${gmailCardTx.amount.toFixed(2)} | Líquido: R$ ${valorFallback.toFixed(2)} | Importado do C6 Bank (fallback)`,
         };
 
         const { error } = await supabase.from('lancamentos_conta_corrente').insert(row);
         if (!error) {
           sincronizadas++;
-          valorTotal += gmailCardTx.amount;
-          lancamentosCriados.push({ descricao: classificacao.descricao, valor: gmailCardTx.amount, categoria: classificacao.categoria, contraparte: '' });
-          console.log(`[SyncBankEntradas] Fallback Gmail para cartão: R$ ${gmailCardTx.amount}`);
+          valorTotal += valorFallback;
+          lancamentosCriados.push({ descricao: classificacao.descricao, valor: valorFallback, categoria: classificacao.categoria, contraparte: '' });
+          console.log(`[SyncBankEntradas] Fallback Gmail para cartão: R$ ${valorFallback.toFixed(2)}`);
         }
       }
     }
