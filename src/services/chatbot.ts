@@ -211,7 +211,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         const routerResult = classifyIntent(userContent, mediaType, senderPhone);
         const agent = getAgent(routerResult.agentId);
 
-        console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)}, model: ${agent.model || 'gpt-4o'})`);
+        console.log(`[Chatbot] Router: "${userContent.substring(0, 50)}" → ${agent.id} (confidence: ${routerResult.confidence.toFixed(2)}, model: ${agent.model || 'gpt-4o-mini'})`);
 
         // 2. Checar acesso no agente
         if (agent.access.allowedRoles && !agent.access.allowedRoles.includes(userConfig?.role || 'staff')) {
@@ -256,7 +256,7 @@ export async function handleChatbotMessage(msg: IncomingMessage): Promise<void> 
         }
 
         // Quando há mídia (foto/PDF), forçar gpt-5.4 para melhor visão
-        const effectiveModel = imageBase64 ? 'gpt-5.4' : (agent.model || 'gpt-4o');
+        const effectiveModel = imageBase64 ? 'gpt-5.4' : (agent.model || 'gpt-4o-mini');
 
         aiResponse = await chatWithTools(messages, agentTools, imageBase64, imageMime, userConfig, effectiveModel);
 

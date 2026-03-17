@@ -150,7 +150,7 @@ function formatDate(isoDate: string): string {
 /** Gera PDF de Conta Corrente */
 async function generateContaCorrentePDF(yearMonth: string, lancamentos: LancamentoContaCorrente[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -281,7 +281,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const now = new Date();
     const geradoEm = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
-    doc.text(`Documento gerado em ${geradoEm} - Vitall Check-Up`, tableX, y, { width: PW, align: 'center' });
+    doc.text(`Documento gerado em ${geradoEm} - Vitall Odontologia`, tableX, y, { width: PW, align: 'center' });
 
     doc.end();
   });
@@ -290,7 +290,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
 /** Gera PDF de Contas a Pagar */
 async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -431,7 +431,7 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const now = new Date();
     const geradoEm = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
-    doc.text(`Documento gerado em ${geradoEm} - Vitall Check-Up`, tableX, y, { width: PW, align: 'center' });
+    doc.text(`Documento gerado em ${geradoEm} - Vitall Odontologia`, tableX, y, { width: PW, align: 'center' });
 
     doc.end();
   });
@@ -498,22 +498,78 @@ export async function executeMonthlyReport(): Promise<void> {
     // 5. Enviar email para contabilidade
     const emailSent = await gmail.sendEmail(
       env.ACCOUNTANT_EMAIL,
-      `Relatórios Financeiros - ${monthTitle} - Vitall Check-Up`,
+      `Relatórios Financeiros - ${monthTitle} - Vitall Odontologia`,
       `
+        <!DOCTYPE html>
         <html>
-          <body style="font-family: Arial, sans-serif; color: #333;">
-            <h2 style="color: #1db9b3;">Relatórios Financeiros - ${monthTitle}</h2>
-            <p>Olá,</p>
-            <p>Seguem os relatórios financeiros da <strong>Vitall Check-Up</strong> referentes ao mês de <strong>${monthTitle}</strong>:</p>
-            <ul>
-              <li><a href="${contaCorrenteLink.webViewLink}">Conta Corrente - ${monthTitle}.pdf</a></li>
-              <li><a href="${contasPagarLink.webViewLink}">Contas a Pagar - ${monthTitle}.pdf</a></li>
-            </ul>
-            <p>Você também pode acessar todos os arquivos na pasta do Google Drive:</p>
-            <p><a href="${folderLink}" style="color: #1db9b3; font-weight: bold;">📁 Pasta ${yearMonth}</a></p>
-            <br>
-            <p style="color: #999; font-size: 12px;">Este email foi gerado automaticamente pelo sistema VitallAssistente.</p>
-          </body>
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+          <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+
+            <!-- Header -->
+            <div style="background: linear-gradient(135deg, #1db9b3 0%, #17a39d 100%); padding: 40px 30px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; letter-spacing: -0.5px;">
+                Relatórios Financeiros
+              </h1>
+              <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.9); font-size: 18px; font-weight: 400;">
+                ${monthTitle}
+              </p>
+            </div>
+
+            <!-- Content -->
+            <div style="padding: 40px 30px;">
+              <p style="margin: 0 0 25px 0; color: #333; font-size: 16px; line-height: 1.6;">
+                Excelente dia,
+              </p>
+
+              <p style="margin: 0 0 30px 0; color: #555; font-size: 15px; line-height: 1.6;">
+                Seguem os relatórios financeiros da <strong style="color: #1db9b3;">Vitall Odontologia</strong> referentes ao mês de <strong>${monthTitle}</strong>:
+              </p>
+
+              <!-- PDFs -->
+              <div style="background-color: #f9fafb; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
+                <div style="margin-bottom: 15px;">
+                  <a href="${contaCorrenteLink.webViewLink}"
+                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #1db9b3; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
+                    📊 Conta Corrente - ${monthTitle}
+                  </a>
+                </div>
+                <div>
+                  <a href="${contasPagarLink.webViewLink}"
+                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #1db9b3; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
+                    📋 Contas a Pagar - ${monthTitle}
+                  </a>
+                </div>
+              </div>
+
+              <!-- Drive Folder -->
+              <div style="text-align: center; padding: 20px; background-color: #f0fffe; border: 2px dashed #1db9b3; border-radius: 8px;">
+                <p style="margin: 0 0 12px 0; color: #555; font-size: 14px;">
+                  Acesse todos os arquivos na pasta do Google Drive:
+                </p>
+                <a href="${folderLink}"
+                   style="display: inline-block; padding: 12px 28px; background-color: #ffffff; color: #1db9b3; text-decoration: none; border: 2px solid #1db9b3; border-radius: 6px; font-weight: 600; font-size: 15px;">
+                  📁 Abrir Pasta
+                </a>
+              </div>
+            </div>
+
+            <!-- Footer -->
+            <div style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0 0 8px 0; color: #1db9b3; font-weight: 600; font-size: 16px;">
+                Vitall Odontologia
+              </p>
+              <p style="margin: 0; color: #999; font-size: 13px; line-height: 1.5;">
+                Este email foi gerado automaticamente pelo sistema VitallAssistente<br>
+                Dúvidas? Entre em contato conosco.
+              </p>
+            </div>
+
+          </div>
+        </body>
         </html>
       `,
     );

@@ -11,6 +11,7 @@ import { UserConfig } from '../config/users';
 
 let client: OpenAI | null = null;
 let financialClient: OpenAI | null = null;
+let groqClient: OpenAI | null = null;
 
 function getClient(): OpenAI | null {
   if (!env.OPENAI_API_KEY) return null;
@@ -18,6 +19,17 @@ function getClient(): OpenAI | null {
     client = new OpenAI({ apiKey: env.OPENAI_API_KEY });
   }
   return client;
+}
+
+function getGroqClient(): OpenAI | null {
+  if (!env.GROQ_API_KEY) return null;
+  if (!groqClient) {
+    groqClient = new OpenAI({
+      apiKey: env.GROQ_API_KEY,
+      baseURL: 'https://api.groq.com/openai/v1',
+    });
+  }
+  return groqClient;
 }
 
 function getFinancialClient(): OpenAI | null {
@@ -54,7 +66,7 @@ export async function chatWithTools(
   if (!openai) {
     return 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns minutos.';
   }
-  const resolvedModel = model || 'gpt-4o';
+  const resolvedModel = model || 'gpt-4o-mini';
 
   try {
     // Se há imagem/PDF, adiciona ao último user message como conteúdo multimodal
@@ -165,32 +177,56 @@ export async function chatWithTools(
 
 /**
  * Transcreve áudio via Whisper API.
+ * Usa Groq (gratuito) se GROQ_API_KEY estiver configurada, senão fallback para OpenAI.
  * Recebe base64 do áudio e o mimetype, retorna texto transcrito.
  */
 export async function transcribeAudio(
   base64Audio: string,
   mimetype: string
 ): Promise<string> {
+  const groq = getGroqClient();
   const openai = getClient();
-  if (!openai) {
+  const client = groq || openai;
+  if (!client) {
     return '';
   }
 
+  const provider = groq ? 'Groq' : 'OpenAI';
+  const model = groq ? 'whisper-large-v3-turbo' : 'whisper-1';
+
   try {
-    // Converte base64 para Buffer e usa toFile do SDK (compatível com Node 18)
     const buffer = Buffer.from(base64Audio, 'base64');
     const ext = mimetype.includes('ogg') ? 'ogg' : mimetype.includes('mp4') ? 'mp4' : 'webm';
     const file = await toFile(buffer, `audio.${ext}`, { type: mimetype });
 
-    const transcription = await openai.audio.transcriptions.create({
-      model: 'whisper-1',
+    console.log(`[Whisper] Transcrevendo via ${provider} (${model})`);
+
+    const transcription = await client.audio.transcriptions.create({
+      model,
       file,
       language: 'pt',
     });
 
     return transcription.text || '';
   } catch (error: any) {
-    console.error('[OpenAI] Erro ao transcrever áudio:', error.message);
+    console.error(`[Whisper] Erro ao transcrever (${provider}):`, error.message);
+    // Fallback: se Groq falhou e tem OpenAI, tenta OpenAI
+    if (groq && openai) {
+      try {
+        console.log('[Whisper] Fallback para OpenAI...');
+        const buffer = Buffer.from(base64Audio, 'base64');
+        const ext = mimetype.includes('ogg') ? 'ogg' : mimetype.includes('mp4') ? 'mp4' : 'webm';
+        const file = await toFile(buffer, `audio.${ext}`, { type: mimetype });
+        const transcription = await openai.audio.transcriptions.create({
+          model: 'whisper-1',
+          file,
+          language: 'pt',
+        });
+        return transcription.text || '';
+      } catch (fallbackErr: any) {
+        console.error('[Whisper] Fallback OpenAI também falhou:', fallbackErr.message);
+      }
+    }
     return '';
   }
 }

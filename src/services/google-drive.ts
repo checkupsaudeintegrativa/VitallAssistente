@@ -33,7 +33,7 @@ export function isAvailable(): boolean {
 }
 
 /**
- * Cria ou encontra uma subpasta para o mês (ex: "2026-03") dentro da pasta pai.
+ * Cria ou encontra uma subpasta para o mês (ex: "Março 2026") dentro da pasta pai.
  * @param yearMonth - String no formato "YYYY-MM" (ex: "2026-03")
  * @param parentFolderId - ID da pasta pai (GOOGLE_DRIVE_FOLDER_ID)
  * @returns ID da subpasta encontrada ou criada
@@ -41,23 +41,29 @@ export function isAvailable(): boolean {
 export async function ensureMonthFolder(yearMonth: string, parentFolderId: string): Promise<string> {
   const drive = getDriveClient();
 
+  // Converter "2026-03" para "Março 2026"
+  const [year, month] = yearMonth.split('-');
+  const date = new Date(Number(year), Number(month) - 1, 1);
+  const monthName = date.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const folderName = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+
   // Buscar pasta existente
   const searchRes = await drive.files.list({
-    q: `name='${yearMonth}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+    q: `name='${folderName}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
     fields: 'files(id, name)',
     spaces: 'drive',
   });
 
   const existing = searchRes.data.files?.[0];
   if (existing?.id) {
-    console.log(`[Drive] Pasta "${yearMonth}" já existe (${existing.id})`);
+    console.log(`[Drive] Pasta "${folderName}" já existe (${existing.id})`);
     return existing.id;
   }
 
   // Criar pasta nova
   const createRes = await drive.files.create({
     requestBody: {
-      name: yearMonth,
+      name: folderName,
       mimeType: 'application/vnd.google-apps.folder',
       parents: [parentFolderId],
     },
@@ -65,7 +71,7 @@ export async function ensureMonthFolder(yearMonth: string, parentFolderId: strin
   });
 
   const newId = createRes.data.id!;
-  console.log(`[Drive] Pasta "${yearMonth}" criada (${newId})`);
+  console.log(`[Drive] Pasta "${folderName}" criada (${newId})`);
   return newId;
 }
 
