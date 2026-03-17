@@ -54,7 +54,9 @@
       "Bash(npm run dev:*)",
       "Bash(timeout:*)",
       "Bash(netstat:*)",
-      "Bash(taskkill:*)"
+      "Bash(taskkill:*)",
+      "Bash(python replace_function.py:*)",
+      "Bash(python replace_function2.py:*)"
     ]
   }
 }

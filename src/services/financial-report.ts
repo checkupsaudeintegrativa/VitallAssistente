@@ -4,21 +4,27 @@ import { env } from '../config/env';
 import * as drive from './google-drive';
 import * as gmail from './gmail';
 import { sendText } from './evolution';
+import * as path from 'path';
+import * as fs from 'fs';
 
 // Supabase — mesmo banco do Precificação (compartilhado com VitallAssistente)
 const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
 // Cores do PDF (padrão Vitall)
 const C = {
-  primary: '#277d7e',
-  secondary: '#c89d68',
-  green: '#059669',
-  red: '#dc2626',
-  grayText: '#6b7280',
-  grayBorder: '#e5e7eb',
+  teal: '#277d7e',        // Teal principal (header tabela + linhas alternadas)
+  tealLight: '#d0e8e8',   // Teal claro (linhas alternadas)
+  gold: '#c89d68',        // Dourado (títulos)
+  green: '#059669',       // Verde (positivo)
+  red: '#dc2626',         // Vermelho (negativo)
+  grayText: '#6b7280',    // Cinza texto
+  grayBorder: '#e5e7eb',  // Cinza bordas
   black: '#000000',
   white: '#ffffff',
 };
+
+// Caminho da logo
+const LOGO_PATH = path.join(__dirname, '../../assets/vitall-logo.png');
 
 // ── Types ──
 
@@ -147,7 +153,40 @@ function formatDate(isoDate: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/** Desenha o header profissional com logo e títulos */
+function drawProfessionalHeader(
+  doc: PDFKit.PDFDocument,
+  title: string,
+  monthTitle: string,
+  pageWidth: number,
+  margin: number,
+): number {
+  const M = margin;
+  let y = M;
+
+  // Logo no canto superior esquerdo
+  if (fs.existsSync(LOGO_PATH)) {
+    doc.image(LOGO_PATH, M, y, { width: 120 });
+  }
+
+  // Espaço após logo
+  y += 90;
+
+  // Título centralizado em dourado
+  doc.fontSize(16).font('Helvetica-Bold').fillColor(C.gold);
+  doc.text(title.toUpperCase(), M, y, { width: pageWidth, align: 'center' });
+  y += 25;
+
+  // Subtítulo "MÊS: XXX 2026" centralizado
+  doc.fontSize(14).font('Helvetica-Bold').fillColor(C.gold);
+  doc.text(`MÊS: ${monthTitle.toUpperCase()}`, M, y, { width: pageWidth, align: 'center' });
+  y += 40;
+
+  return y;
+}
+
 /** Gera PDF de Conta Corrente */
+/** Gera PDF de Conta Corrente com layout profissional */
 async function generateContaCorrentePDF(yearMonth: string, lancamentos: LancamentoContaCorrente[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
@@ -157,34 +196,28 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     doc.on('error', reject);
 
     const [year, month] = yearMonth.split('-');
-    const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 40; // margin
+    const M = 40;
     const PW = doc.page.width - M * 2;
 
-    // Header
-    doc.fontSize(16).font('Helvetica-Bold').fillColor(C.secondary);
-    doc.text(`CONTA CORRENTE — ${titleMonth}`, M, M, { align: 'center', width: PW });
-    doc.moveDown(1);
+    // Header profissional com logo
+    let y = drawProfessionalHeader(doc, 'Conta Corrente', titleMonth, PW, M);
 
-    // Linha separadora
-    doc.moveTo(M, doc.y).lineTo(M + PW, doc.y).lineWidth(1).strokeColor(C.grayBorder).stroke();
-    doc.moveDown(0.5);
+    // Tabela - 5 colunas centralizadas
+    const colW = [100, 120, 250, 180, 120]; // Data | Tipo | Descrição | Contraparte | Valor
+    const TW = colW.reduce((a, b) => a + b, 0);
+    const TX = M + (PW - TW) / 2; // Centralizar tabela
 
-    // Tabela
-    const colW = [80, 70, 200, 150, 100]; // Data | Tipo | Descrição | Contraparte | Valor
-    const tableX = M;
-    let y = doc.y;
-
-    // Header da tabela
-    const thH = 20;
-    doc.rect(tableX, y, PW, thH).fill(C.primary);
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(C.white);
-    const headers = ['Data', 'Tipo', 'Descrição', 'Contraparte', 'Valor'];
-    let cx = tableX;
+    // Header da tabela (teal com texto branco)
+    const thH = 30;
+    doc.rect(TX, y, TW, thH).fill(C.teal);
+    doc.fontSize(10).font('Helvetica-Bold').fillColor(C.white);
+    const headers = ['DATA', 'TIPO', 'DESCRIÇÃO', 'CONTRAPARTE', 'VALOR'];
+    let cx = TX;
     for (let i = 0; i < 5; i++) {
-      doc.text(headers[i], cx + 4, y + 5, { width: colW[i] - 8, align: i === 4 ? 'right' : 'left' });
+      doc.text(headers[i], cx, y + 10, { width: colW[i], align: 'center' });
       cx += colW[i];
     }
     y += thH;
@@ -193,49 +226,58 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     let totalVendas = 0;
     let totalEntradas = 0;
     let totalSaidas = 0;
+    let rowIndex = 0;
 
     for (const lanc of lancamentos) {
-      const rowH = 18;
+      const rowH = 25;
 
       // Page break
-      if (y + rowH > doc.page.height - 100) {
+      if (y + rowH > doc.page.height - 80) {
         doc.addPage();
-        y = M;
+        y = drawProfessionalHeader(doc, 'Conta Corrente', titleMonth, PW, M);
+        // Re-desenhar header da tabela
+        doc.rect(TX, y, TW, thH).fill(C.teal);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(C.white);
+        cx = TX;
+        for (let i = 0; i < 5; i++) {
+          doc.text(headers[i], cx, y + 10, { width: colW[i], align: 'center' });
+          cx += colW[i];
+        }
+        y += thH;
+        rowIndex = 0;
       }
 
-      // Background
-      doc.rect(tableX, y, PW, rowH).fill(C.white);
+      // Background alternado (branco / teal claro)
+      const bg = rowIndex % 2 === 0 ? C.white : C.tealLight;
+      doc.rect(TX, y, TW, rowH).fill(bg);
 
       // Bordas
       doc.lineWidth(0.5).strokeColor(C.grayBorder);
-      doc.moveTo(tableX, y).lineTo(tableX + PW, y).stroke();
-      doc.moveTo(tableX, y + rowH).lineTo(tableX + PW, y + rowH).stroke();
+      doc.moveTo(TX, y).lineTo(TX + TW, y).stroke();
+      doc.moveTo(TX, y + rowH).lineTo(TX + TW, y + rowH).stroke();
 
-      // Dados
-      doc.fontSize(8).font('Helvetica').fillColor(C.black);
-      cx = tableX;
+      // Dados centralizados
+      doc.fontSize(9).font('Helvetica').fillColor(C.black);
+      cx = TX;
 
       // Data
-      doc.text(formatDate(lanc.data), cx + 4, y + 5, { width: colW[0] - 8 });
+      doc.text(formatDate(lanc.data), cx, y + 7, { width: colW[0], align: 'center' });
       cx += colW[0];
 
-      // Tipo (colorido)
-      const tipoColor = lanc.tipo === 'venda' || lanc.tipo === 'entrada' ? C.green : C.red;
-      const tipoLabel = lanc.tipo === 'venda' ? 'Venda' : lanc.tipo === 'entrada' ? 'Entrada' : 'Saída';
-      doc.fillColor(tipoColor).text(tipoLabel, cx + 4, y + 5, { width: colW[1] - 8 });
+      // Tipo
+      doc.text(lanc.tipo.toUpperCase(), cx, y + 7, { width: colW[1], align: 'center' });
       cx += colW[1];
 
       // Descrição
-      doc.fillColor(C.black).text((lanc.descricao || '').substring(0, 50), cx + 4, y + 5, { width: colW[2] - 8 });
+      doc.text((lanc.descricao || '').substring(0, 40), cx + 5, y + 7, { width: colW[2] - 10, align: 'left' });
       cx += colW[2];
 
       // Contraparte
-      doc.text((lanc.contraparte || '').substring(0, 30), cx + 4, y + 5, { width: colW[3] - 8 });
+      doc.text((lanc.contraparte || '').substring(0, 25), cx, y + 7, { width: colW[3], align: 'center' });
       cx += colW[3];
 
       // Valor
-      const valorColor = lanc.tipo === 'venda' || lanc.tipo === 'entrada' ? C.green : C.red;
-      doc.fillColor(valorColor).text(formatBRL(lanc.valor), cx + 4, y + 5, { width: colW[4] - 8, align: 'right' });
+      doc.text(formatBRL(lanc.valor), cx, y + 7, { width: colW[4], align: 'center' });
 
       // Somar totais
       if (lanc.tipo === 'venda') totalVendas += lanc.valor;
@@ -243,51 +285,64 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
       else totalSaidas += lanc.valor;
 
       y += rowH;
+      rowIndex++;
     }
 
     // Rodapé com totais
-    y += 10;
-    const footH = 60;
-    if (y + footH > doc.page.height - 40) {
+    y += 20;
+    if (y > doc.page.height - 100) {
       doc.addPage();
-      y = M;
+      y = M + 150;
     }
 
-    doc.lineWidth(2).strokeColor(C.black);
-    doc.rect(tableX, y, PW, footH).stroke();
+    const resumoW = 400;
+    const resumoX = M + (PW - resumoW) / 2;
 
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.gold);
+    doc.text('RESUMO FINANCEIRO', M, y, { width: PW, align: 'center' });
+    y += 25;
+
+    const itemH = 22;
+    // Total Vendas
+    doc.rect(resumoX, y, resumoW, itemH).fill(C.tealLight);
     doc.fontSize(10).font('Helvetica-Bold').fillColor(C.black);
-    const labelX = tableX + 10;
-    const valueX = tableX + PW - 120;
+    doc.text('Total Vendas', resumoX + 10, y + 6, { width: 200 });
+    doc.text(formatBRL(totalVendas), resumoX + 210, y + 6, { width: 180, align: 'right' });
+    y += itemH;
 
-    doc.text('Total Vendas:', labelX, y + 8);
-    doc.fillColor(C.green).text(formatBRL(totalVendas), valueX, y + 8, { width: 110, align: 'right' });
+    // Total Entradas
+    doc.rect(resumoX, y, resumoW, itemH).fill(C.white);
+    doc.text('Total Entradas', resumoX + 10, y + 6, { width: 200 });
+    doc.text(formatBRL(totalEntradas), resumoX + 210, y + 6, { width: 180, align: 'right' });
+    y += itemH;
 
-    doc.fillColor(C.black).text('Total Entradas:', labelX, y + 23);
-    doc.fillColor(C.green).text(formatBRL(totalEntradas), valueX, y + 23, { width: 110, align: 'right' });
+    // Total Saídas
+    doc.rect(resumoX, y, resumoW, itemH).fill(C.tealLight);
+    doc.text('Total Saídas', resumoX + 10, y + 6, { width: 200 });
+    doc.text(formatBRL(totalSaidas), resumoX + 210, y + 6, { width: 180, align: 'right' });
+    y += itemH;
 
-    doc.fillColor(C.black).text('Total Saídas:', labelX, y + 38);
-    doc.fillColor(C.red).text(formatBRL(totalSaidas), valueX, y + 38, { width: 110, align: 'right' });
-
+    // Saldo
     const saldo = totalVendas + totalEntradas - totalSaidas;
-    y += footH + 5;
-    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.black);
-    doc.text('Saldo do Mês:', labelX, y);
     const saldoColor = saldo >= 0 ? C.green : C.red;
-    doc.fillColor(saldoColor).text(formatBRL(saldo), valueX, y, { width: 110, align: 'right' });
+    doc.rect(resumoX, y, resumoW, itemH + 5).fill(C.teal);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.white);
+    doc.text('SALDO DO MÊS', resumoX + 10, y + 8, { width: 200 });
+    doc.fillColor(C.white).text(formatBRL(saldo), resumoX + 210, y + 8, { width: 180, align: 'right' });
 
     // Rodapé
-    y += 30;
+    y += 50;
     const now = new Date();
     const geradoEm = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
-    doc.text(`Documento gerado em ${geradoEm} - Vitall Odontologia`, tableX, y, { width: PW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(C.grayText);
+    doc.text(`Documento gerado em ${geradoEm} - Vitall Odontologia`, M, y, { width: PW, align: 'center' });
 
     doc.end();
   });
 }
 
-/** Gera PDF de Contas a Pagar */
+
+/** Gera PDF de Contas a Pagar com layout profissional */
 async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
@@ -297,34 +352,28 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     doc.on('error', reject);
 
     const [year, month] = yearMonth.split('-');
-    const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+    const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
     const M = 40;
     const PW = doc.page.width - M * 2;
 
-    // Header
-    doc.fontSize(16).font('Helvetica-Bold').fillColor(C.secondary);
-    doc.text(`CONTAS A PAGAR — ${titleMonth}`, M, M, { align: 'center', width: PW });
-    doc.moveDown(1);
+    // Header profissional com logo
+    let y = drawProfessionalHeader(doc, 'Contas a Pagar', titleMonth, PW, M);
 
-    // Linha separadora
-    doc.moveTo(M, doc.y).lineTo(M + PW, doc.y).lineWidth(1).strokeColor(C.grayBorder).stroke();
-    doc.moveDown(0.5);
+    // Tabela - 6 colunas centralizadas
+    const colW = [90, 200, 120, 120, 100, 80]; // Venc | Descrição | Categoria | Classif | Valor | Status
+    const TW = colW.reduce((a, b) => a + b, 0);
+    const TX = M + (PW - TW) / 2;
 
-    // Tabela
-    const colW = [70, 150, 100, 110, 80, 60]; // Vencimento | Descrição | Categoria | Classificação | Valor | Status
-    const tableX = M;
-    let y = doc.y;
-
-    // Header da tabela
-    const thH = 20;
-    doc.rect(tableX, y, PW, thH).fill(C.primary);
-    doc.fontSize(9).font('Helvetica-Bold').fillColor(C.white);
-    const headers = ['Vencimento', 'Descrição', 'Categoria', 'Classificação', 'Valor', 'Status'];
-    let cx = tableX;
+    // Header da tabela (teal com texto branco)
+    const thH = 30;
+    doc.rect(TX, y, TW, thH).fill(C.teal);
+    doc.fontSize(10).font('Helvetica-Bold').fillColor(C.white);
+    const headers = ['VENCIMENTO', 'DESCRIÇÃO', 'CATEGORIA', 'CLASSIFICAÇÃO', 'VALOR', 'STATUS'];
+    let cx = TX;
     for (let i = 0; i < 6; i++) {
-      doc.text(headers[i], cx + 4, y + 5, { width: colW[i] - 8, align: i === 4 ? 'right' : 'left' });
+      doc.text(headers[i], cx, y + 10, { width: colW[i], align: 'center' });
       cx += colW[i];
     }
     y += thH;
@@ -333,50 +382,65 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const resumo = new Map<string, number>();
     let totalAberto = 0;
     let totalPago = 0;
+    let rowIndex = 0;
 
     for (const conta of contas) {
-      const rowH = 18;
+      const rowH = 25;
 
-      if (y + rowH > doc.page.height - 120) {
+      // Page break
+      if (y + rowH > doc.page.height - 80) {
         doc.addPage();
-        y = M;
+        y = drawProfessionalHeader(doc, 'Contas a Pagar', titleMonth, PW, M);
+        // Re-desenhar header
+        doc.rect(TX, y, TW, thH).fill(C.teal);
+        doc.fontSize(10).font('Helvetica-Bold').fillColor(C.white);
+        cx = TX;
+        for (let i = 0; i < 6; i++) {
+          doc.text(headers[i], cx, y + 10, { width: colW[i], align: 'center' });
+          cx += colW[i];
+        }
+        y += thH;
+        rowIndex = 0;
       }
 
-      doc.rect(tableX, y, PW, rowH).fill(C.white);
-      doc.lineWidth(0.5).strokeColor(C.grayBorder);
-      doc.moveTo(tableX, y).lineTo(tableX + PW, y).stroke();
-      doc.moveTo(tableX, y + rowH).lineTo(tableX + PW, y + rowH).stroke();
+      // Background alternado
+      const bg = rowIndex % 2 === 0 ? C.white : C.tealLight;
+      doc.rect(TX, y, TW, rowH).fill(bg);
 
-      doc.fontSize(8).font('Helvetica').fillColor(C.black);
-      cx = tableX;
+      // Bordas
+      doc.lineWidth(0.5).strokeColor(C.grayBorder);
+      doc.moveTo(TX, y).lineTo(TX + TW, y).stroke();
+      doc.moveTo(TX, y + rowH).lineTo(TX + TW, y + rowH).stroke();
+
+      // Dados centralizados
+      doc.fontSize(9).font('Helvetica').fillColor(C.black);
+      cx = TX;
 
       // Vencimento
-      doc.text(formatDate(conta.vencimento), cx + 4, y + 5, { width: colW[0] - 8 });
+      doc.text(formatDate(conta.vencimento), cx, y + 7, { width: colW[0], align: 'center' });
       cx += colW[0];
 
       // Descrição
-      doc.text((conta.descricao || '').substring(0, 35), cx + 4, y + 5, { width: colW[1] - 8 });
+      doc.text((conta.descricao || '').substring(0, 35), cx + 5, y + 7, { width: colW[1] - 10, align: 'left' });
       cx += colW[1];
 
       // Categoria
-      doc.text((conta.categoria || '').substring(0, 20), cx + 4, y + 5, { width: colW[2] - 8 });
+      doc.text((conta.categoria || '').substring(0, 18), cx, y + 7, { width: colW[2], align: 'center' });
       cx += colW[2];
 
       // Classificação
-      doc.text((conta.classificacao || '').substring(0, 20), cx + 4, y + 5, { width: colW[3] - 8 });
+      doc.text((conta.classificacao || '').substring(0, 18), cx, y + 7, { width: colW[3], align: 'center' });
       cx += colW[3];
 
       // Valor
-      const valorColor = conta.status === 'realizado' ? C.red : C.grayText;
-      doc.fillColor(valorColor).text(formatBRL(conta.valor), cx + 4, y + 5, { width: colW[4] - 8, align: 'right' });
+      doc.text(formatBRL(conta.valor), cx, y + 7, { width: colW[4], align: 'center' });
       cx += colW[4];
 
       // Status
-      const statusColor = conta.status === 'realizado' ? C.green : C.red;
-      const statusLabel = conta.status === 'realizado' ? 'Pago' : 'Aberto';
-      doc.fillColor(statusColor).text(statusLabel, cx + 4, y + 5, { width: colW[5] - 8, align: 'center' });
+      const statusLabel = conta.status === 'realizado' ? 'PAGO' : 'ABERTO';
+      doc.text(statusLabel, cx, y + 7, { width: colW[5], align: 'center' });
 
-      // Resumo por classificação
+      // Resumo
       const classif = conta.classificacao || 'Outros';
       resumo.set(classif, (resumo.get(classif) || 0) + conta.valor);
 
@@ -384,58 +448,73 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
       else totalAberto += conta.valor;
 
       y += rowH;
+      rowIndex++;
     }
 
     // Resumo por classificação
-    y += 10;
-    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.black);
-    doc.text('Resumo por Classificação:', tableX, y);
-    y += 15;
-
-    for (const [classif, total] of resumo) {
-      doc.fontSize(9).font('Helvetica').fillColor(C.black);
-      doc.text(`• ${classif}:`, tableX + 10, y);
-      doc.text(formatBRL(total), tableX + PW - 100, y, { width: 90, align: 'right' });
-      y += 14;
-    }
-
-    // Rodapé com totais
-    y += 10;
-    const footH = 50;
-    if (y + footH > doc.page.height - 40) {
+    y += 30;
+    if (y > doc.page.height - 200) {
       doc.addPage();
-      y = M;
+      y = M + 150;
     }
 
-    doc.lineWidth(2).strokeColor(C.black);
-    doc.rect(tableX, y, PW, footH).stroke();
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.gold);
+    doc.text('RESUMO POR CLASSIFICAÇÃO', M, y, { width: PW, align: 'center' });
+    y += 25;
 
+    const resumoW = 400;
+    const resumoX = M + (PW - resumoW) / 2;
+
+    let resumoIndex = 0;
+    for (const [classif, total] of resumo) {
+      const itemH = 22;
+      const bg = resumoIndex % 2 === 0 ? C.tealLight : C.white;
+      doc.rect(resumoX, y, resumoW, itemH).fill(bg);
+      doc.fontSize(9).font('Helvetica').fillColor(C.black);
+      doc.text(classif, resumoX + 10, y + 6, { width: 200 });
+      doc.text(formatBRL(total), resumoX + 210, y + 6, { width: 180, align: 'right' });
+      y += itemH;
+      resumoIndex++;
+    }
+
+    // Totais finais
+    y += 20;
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.gold);
+    doc.text('TOTAIS', M, y, { width: PW, align: 'center' });
+    y += 25;
+
+    const itemH = 22;
+    // Total Aberto
+    doc.rect(resumoX, y, resumoW, itemH).fill(C.tealLight);
     doc.fontSize(10).font('Helvetica-Bold').fillColor(C.black);
-    const labelX = tableX + 10;
-    const valueX = tableX + PW - 120;
+    doc.text('Total Aberto', resumoX + 10, y + 6, { width: 200 });
+    doc.fillColor(C.red).text(formatBRL(totalAberto), resumoX + 210, y + 6, { width: 180, align: 'right' });
+    y += itemH;
 
-    doc.text('Total Aberto:', labelX, y + 8);
-    doc.fillColor(C.red).text(formatBRL(totalAberto), valueX, y + 8, { width: 110, align: 'right' });
+    // Total Pago
+    doc.rect(resumoX, y, resumoW, itemH).fill(C.white);
+    doc.fillColor(C.black).text('Total Pago', resumoX + 10, y + 6, { width: 200 });
+    doc.fillColor(C.green).text(formatBRL(totalPago), resumoX + 210, y + 6, { width: 180, align: 'right' });
+    y += itemH;
 
-    doc.fillColor(C.black).text('Total Pago:', labelX, y + 25);
-    doc.fillColor(C.green).text(formatBRL(totalPago), valueX, y + 25, { width: 110, align: 'right' });
-
+    // Total Geral
     const totalGeral = totalAberto + totalPago;
-    y += footH + 5;
-    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.black);
-    doc.text('Total Geral:', labelX, y);
-    doc.text(formatBRL(totalGeral), valueX, y, { width: 110, align: 'right' });
+    doc.rect(resumoX, y, resumoW, itemH + 5).fill(C.teal);
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.white);
+    doc.text('TOTAL GERAL', resumoX + 10, y + 8, { width: 200 });
+    doc.text(formatBRL(totalGeral), resumoX + 210, y + 8, { width: 180, align: 'right' });
 
     // Rodapé
-    y += 30;
+    y += 50;
     const now = new Date();
     const geradoEm = now.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
-    doc.text(`Documento gerado em ${geradoEm} - Vitall Odontologia`, tableX, y, { width: PW, align: 'center' });
+    doc.fontSize(8).font('Helvetica').fillColor(C.grayText);
+    doc.text(`Documento gerado em ${geradoEm} - Vitall Odontologia`, M, y, { width: PW, align: 'center' });
 
     doc.end();
   });
 }
+
 
 // ── Orchestration ──
 
