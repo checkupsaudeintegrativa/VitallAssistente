@@ -192,7 +192,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
-      margins: { top: 20, bottom: 20, left: 30, right: 30 }
+      margins: { top: 15, bottom: 15, left: 25, right: 25 }
     });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
@@ -203,8 +203,8 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 30; // margin lateral
-    const MT = 20; // margin topo
+    const M = 25; // margin lateral
+    const MT = 15; // margin topo
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
@@ -353,7 +353,7 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
-      margins: { top: 20, bottom: 20, left: 30, right: 30 }
+      margins: { top: 15, bottom: 15, left: 25, right: 25 }
     });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
@@ -364,8 +364,8 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 30; // margin lateral
-    const MT = 20; // margin topo
+    const M = 25; // margin lateral
+    const MT = 15; // margin topo
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
