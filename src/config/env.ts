@@ -29,7 +29,10 @@ export const env = {
   SUPABASE_PONTO_URL: process.env.SUPABASE_PONTO_URL || '',
   SUPABASE_PONTO_KEY: process.env.SUPABASE_PONTO_KEY || '',
 
-  // OpenAI (GPT-4o + Whisper)
+  // Groq (Whisper transcrição de áudio — gratuito)
+  GROQ_API_KEY: process.env.GROQ_API_KEY || '',
+
+  // OpenAI (GPT-4o)
   OPENAI_API_KEY: required('OPENAI_API_KEY'),
   // OpenAI — projeto financeiro (data-sharing, modelos premium)
   OPENAI_FINANCIAL_API_KEY: process.env.OPENAI_FINANCIAL_API_KEY || '',
@@ -48,6 +51,13 @@ export const env = {
   GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID || '',
   GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET || '',
   GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN || '',
+
+  // Google Drive — conta da clínica (mesmo padrão do Calendar)
+  GOOGLE_DRIVE_CLINIC_REFRESH_TOKEN: process.env.GOOGLE_DRIVE_CLINIC_REFRESH_TOKEN || '',
+  GOOGLE_DRIVE_FOLDER_ID: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
+
+  // Email da contabilidade
+  ACCOUNTANT_EMAIL: process.env.ACCOUNTANT_EMAIL || 'arthurgabriel.birer@gmail.com',
 
   // App
   PORT: process.env.PORT || '3000',

@@ -267,6 +267,57 @@ function parseBRL(value: string): number {
   return isNaN(num) ? 0 : num;
 }
 
+/**
+ * Envia um email via Gmail API.
+ * Requer que o GMAIL_REFRESH_TOKEN tenha scope 'gmail.send'.
+ * @param to - Email do destinatário
+ * @param subject - Assunto do email
+ * @param htmlBody - Corpo do email em HTML
+ * @returns true se enviado com sucesso, false caso contrário
+ */
+export async function sendEmail(to: string, subject: string, htmlBody: string): Promise<boolean> {
+  try {
+    const gmail = getGmailClient();
+
+    // Formato RFC 2822
+    const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+    const messageParts = [
+      `To: ${to}`,
+      `Subject: ${utf8Subject}`,
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      htmlBody,
+    ];
+    const message = messageParts.join('\r\n');
+
+    // Encode em base64url
+    const encodedMessage = Buffer.from(message)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    console.log(`[Gmail] Email enviado para ${to}: ${subject}`);
+    return true;
+  } catch (error: any) {
+    // Se falhar por falta de scope gmail.send, retorna false gracefully
+    if (error.message?.includes('insufficient') || error.message?.includes('scope')) {
+      console.warn(`[Gmail] Scope gmail.send não configurado. Email NÃO enviado para ${to}`);
+      return false;
+    }
+    console.error(`[Gmail] Erro ao enviar email para ${to}:`, error.message);
+    return false;
+  }
+}
+
 // ── Extração de recebíveis do Excel anexo do C6 Bank ──
 
 export interface RecebívelParcela {

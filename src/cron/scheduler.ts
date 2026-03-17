@@ -18,6 +18,7 @@ import * as gcal from '../services/google-calendar';
 import * as gmail from '../services/gmail';
 import { generatePontoReports } from '../services/ponto-report';
 import { executeTool } from '../services/ai-tools';
+import { executeMonthlyReport } from '../services/financial-report';
 
 // ── Procedimentos que exigem termo de consentimento ──
 const CONSENT_KEYWORDS = [
@@ -357,6 +358,17 @@ export function startScheduler(): void {
     }
   });
 
+  // Relatório financeiro mensal — todo dia 01 às 06:00 UTC (03:00 BRT)
+  cron.schedule('0 6 1 * *', async () => {
+    try {
+      console.log('[Cron:Financeiro] Gerando relatórios financeiros mensais...');
+      await executeMonthlyReport();
+      console.log('[Cron:Financeiro] Relatórios financeiros mensais concluídos');
+    } catch (error: any) {
+      console.error('[Cron:Financeiro] Erro ao gerar relatórios financeiros:', error.message);
+    }
+  });
+
   console.log('[Cron] Scheduler de lembretes iniciado:');
   console.log('  - */5 * * * *: Lembretes pessoais (a cada 5 min)');
   console.log('  - */5 * * * *: Lembretes de foto de paciente (a cada 5 min)');
@@ -366,4 +378,5 @@ export function startScheduler(): void {
   console.log('  - 10:30/20:00 UTC (7h30/17h BRT): Digest de lembretes pendentes');
   console.log('  - 11:00 UTC (08:00 BRT): Relatório de ponto semanal (segunda-feira)');
   console.log('  - */2 * * * *: Auto-importação vendas Clinicorp (a cada 2 min, 24/7)');
+  console.log('  - 06:00 UTC (03:00 BRT): Relatório financeiro mensal (dia 01 de cada mês)');
 }

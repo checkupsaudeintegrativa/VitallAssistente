@@ -3,6 +3,7 @@ import { env } from './config/env';
 import webhookHandler from './webhooks/handler';
 import { startScheduler } from './cron/scheduler';
 import * as gcal from './services/google-calendar';
+import { executeMonthlyReport } from './services/financial-report';
 
 const app = express();
 
@@ -52,6 +53,21 @@ app.get('/test/calendar', async (req, res) => {
       event,
     });
   } catch (error: any) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// Teste Relatório Financeiro Mensal
+app.post('/test/monthly-report', async (_req, res) => {
+  try {
+    console.log('[Test] Iniciando teste de relatório financeiro mensal...');
+    await executeMonthlyReport();
+    res.json({
+      status: 'ok',
+      message: 'Relatório financeiro mensal gerado com sucesso',
+    });
+  } catch (error: any) {
+    console.error('[Test] Erro ao gerar relatório:', error.message);
     res.status(500).json({ status: 'error', message: error.message });
   }
 });
