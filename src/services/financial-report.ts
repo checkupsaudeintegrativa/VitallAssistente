@@ -189,7 +189,11 @@ function drawProfessionalHeader(
 /** Gera PDF de Conta Corrente com layout profissional */
 async function generateContaCorrentePDF(yearMonth: string, lancamentos: LancamentoContaCorrente[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
+    const doc = new PDFDocument({
+      size: 'A4',
+      layout: 'landscape',
+      margins: { top: 20, bottom: 20, left: 30, right: 30 }
+    });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -199,7 +203,8 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 40;
+    const M = 30; // margin lateral
+    const MT = 20; // margin topo
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
@@ -345,7 +350,11 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
 /** Gera PDF de Contas a Pagar com layout profissional */
 async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 40 });
+    const doc = new PDFDocument({
+      size: 'A4',
+      layout: 'landscape',
+      margins: { top: 20, bottom: 20, left: 30, right: 30 }
+    });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -355,7 +364,8 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 40;
+    const M = 30; // margin lateral
+    const MT = 20; // margin topo
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
