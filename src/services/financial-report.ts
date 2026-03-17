@@ -10,7 +10,7 @@ const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
 
 // Cores do PDF (padrão Vitall)
 const C = {
-  primary: '#1db9b3',
+  primary: '#277d7e',
   secondary: '#c89d68',
   green: '#059669',
   red: '#dc2626',
@@ -505,12 +505,15 @@ export async function executeMonthlyReport(): Promise<void> {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <link rel="preconnect" href="https://fonts.googleapis.com">
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+          <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
         </head>
-        <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+        <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
           <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
 
             <!-- Header -->
-            <div style="background: linear-gradient(135deg, #1db9b3 0%, #17a39d 100%); padding: 40px 30px; text-align: center;">
+            <div style="background: linear-gradient(135deg, #277d7e 0%, #1f6364 100%); padding: 40px 30px; text-align: center;">
               <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; letter-spacing: -0.5px;">
                 Relatórios Financeiros
               </h1>
@@ -526,32 +529,32 @@ export async function executeMonthlyReport(): Promise<void> {
               </p>
 
               <p style="margin: 0 0 30px 0; color: #555; font-size: 15px; line-height: 1.6;">
-                Seguem os relatórios financeiros da <strong style="color: #1db9b3;">Vitall Odontologia</strong> referentes ao mês de <strong>${monthTitle}</strong>:
+                Seguem os relatórios financeiros da <strong style="color: #277d7e;">Vitall Odontologia</strong> referentes ao mês de <strong>${monthTitle}</strong>:
               </p>
 
               <!-- PDFs -->
               <div style="background-color: #f9fafb; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
                 <div style="margin-bottom: 15px;">
                   <a href="${contaCorrenteLink.webViewLink}"
-                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #1db9b3; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
-                    📊 Conta Corrente - ${monthTitle}
+                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #277d7e; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
+                    Conta Corrente - ${monthTitle}
                   </a>
                 </div>
                 <div>
                   <a href="${contasPagarLink.webViewLink}"
-                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #1db9b3; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
-                    📋 Contas a Pagar - ${monthTitle}
+                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #277d7e; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
+                    Contas a Pagar - ${monthTitle}
                   </a>
                 </div>
               </div>
 
               <!-- Drive Folder -->
-              <div style="text-align: center; padding: 20px; background-color: #f0fffe; border: 2px dashed #1db9b3; border-radius: 8px;">
+              <div style="text-align: center; padding: 20px; background-color: #f0fffe; border: 2px dashed #277d7e; border-radius: 8px;">
                 <p style="margin: 0 0 12px 0; color: #555; font-size: 14px;">
                   Acesse todos os arquivos na pasta do Google Drive:
                 </p>
                 <a href="${folderLink}"
-                   style="display: inline-block; padding: 12px 28px; background-color: #ffffff; color: #1db9b3; text-decoration: none; border: 2px solid #1db9b3; border-radius: 6px; font-weight: 600; font-size: 15px;">
+                   style="display: inline-block; padding: 12px 28px; background-color: #ffffff; color: #277d7e; text-decoration: none; border: 2px solid #277d7e; border-radius: 6px; font-weight: 600; font-size: 15px;">
                   📁 Abrir Pasta
                 </a>
               </div>
@@ -559,7 +562,7 @@ export async function executeMonthlyReport(): Promise<void> {
 
             <!-- Footer -->
             <div style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0 0 8px 0; color: #1db9b3; font-weight: 600; font-size: 16px;">
+              <p style="margin: 0 0 8px 0; color: #277d7e; font-weight: 600; font-size: 16px;">
                 Vitall Odontologia
               </p>
               <p style="margin: 0; color: #999; font-size: 13px; line-height: 1.5;">
