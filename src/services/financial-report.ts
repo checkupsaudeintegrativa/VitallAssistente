@@ -153,6 +153,36 @@ function formatDate(isoDate: string): string {
   return `${d}/${m}/${y}`;
 }
 
+/** Desenha um badge colorido (pill) centralizado */
+function drawBadge(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  bgColor: string,
+  textColor: string,
+): void {
+  const badgeW = 70;
+  const badgeH = 20;
+  const badgeX = x + (width - badgeW) / 2;
+  const radius = 10;
+
+  doc.save();
+  doc.roundedRect(badgeX, y, badgeW, badgeH, radius).fill(bgColor);
+  doc.fontSize(9).font('Helvetica-Bold').fillColor(textColor);
+  doc.text(text, badgeX, y + 5, { width: badgeW, align: 'center', lineBreak: false });
+  doc.restore();
+}
+
+/** Retorna o dia da semana abreviado (SEG, TER, etc.) */
+function getDayOfWeek(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-');
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  const days = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
+  return days[date.getDay()];
+}
+
 /** Desenha o header profissional com logo e títulos */
 function drawProfessionalHeader(
   doc: PDFKit.PDFDocument,
@@ -192,7 +222,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
-      margins: { top: 15, bottom: 15, left: 25, right: 25 }
+      margins: { top: 0, bottom: 0, left: 0, right: 0 }
     });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
@@ -203,8 +233,8 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 25; // margin lateral
-    const MT = 15; // margin topo
+    const M = 0; // margin lateral (teste sem margem)
+    const MT = 0; // margin topo (teste sem margem)
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
@@ -234,7 +264,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     let rowIndex = 0;
 
     for (const lanc of lancamentos) {
-      const rowH = 25;
+      const rowH = 32; // Aumentado para caber dia da semana
 
       // Page break
       if (y + rowH > doc.page.height - 80) {
@@ -265,8 +295,11 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
       doc.fontSize(9).font('Helvetica').fillColor(C.black);
       cx = TX;
 
-      // Data
-      doc.text(formatDate(lanc.data), cx, y + 7, { width: colW[0], align: 'center' });
+      // Data + Dia da Semana
+      doc.fontSize(9).font('Helvetica').fillColor(C.black);
+      doc.text(formatDate(lanc.data), cx, y + 5, { width: colW[0], align: 'center' });
+      doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
+      doc.text(getDayOfWeek(lanc.data), cx, y + 18, { width: colW[0], align: 'center' });
       cx += colW[0];
 
       // Tipo
@@ -353,7 +386,7 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
-      margins: { top: 15, bottom: 15, left: 25, right: 25 }
+      margins: { top: 0, bottom: 0, left: 0, right: 0 }
     });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
@@ -364,8 +397,8 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 25; // margin lateral
-    const MT = 15; // margin topo
+    const M = 0; // margin lateral (teste sem margem)
+    const MT = 0; // margin topo (teste sem margem)
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
@@ -395,7 +428,7 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     let rowIndex = 0;
 
     for (const conta of contas) {
-      const rowH = 25;
+      const rowH = 32; // Aumentado para caber dia da semana e badge
 
       // Page break
       if (y + rowH > doc.page.height - 80) {
@@ -426,8 +459,11 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
       doc.fontSize(9).font('Helvetica').fillColor(C.black);
       cx = TX;
 
-      // Vencimento
-      doc.text(formatDate(conta.vencimento), cx, y + 7, { width: colW[0], align: 'center' });
+      // Vencimento + Dia da Semana
+      doc.fontSize(9).font('Helvetica').fillColor(C.black);
+      doc.text(formatDate(conta.vencimento), cx, y + 5, { width: colW[0], align: 'center' });
+      doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
+      doc.text(getDayOfWeek(conta.vencimento), cx, y + 18, { width: colW[0], align: 'center' });
       cx += colW[0];
 
       // Descrição
@@ -446,9 +482,11 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
       doc.text(formatBRL(conta.valor), cx, y + 7, { width: colW[4], align: 'center' });
       cx += colW[4];
 
-      // Status
+      // Status com badge colorido
       const statusLabel = conta.status === 'realizado' ? 'PAGO' : 'ABERTO';
-      doc.text(statusLabel, cx, y + 7, { width: colW[5], align: 'center' });
+      const statusBg = conta.status === 'realizado' ? '#d1fae5' : '#fee2e2'; // verde claro / vermelho claro
+      const statusColor = conta.status === 'realizado' ? '#059669' : '#dc2626'; // verde / vermelho
+      drawBadge(doc, statusLabel, cx, y + 6, colW[5], statusBg, statusColor);
 
       // Resumo
       const classif = conta.classificacao || 'Outros';
