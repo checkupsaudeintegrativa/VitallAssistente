@@ -163,15 +163,15 @@ function drawBadge(
   bgColor: string,
   textColor: string,
 ): void {
-  const badgeW = 70;
-  const badgeH = 20;
+  const badgeW = 60;
+  const badgeH = 18;
   const badgeX = x + (width - badgeW) / 2;
-  const radius = 10;
+  const radius = 4; // Radius medium
 
   doc.save();
   doc.roundedRect(badgeX, y, badgeW, badgeH, radius).fill(bgColor);
-  doc.fontSize(9).font('Helvetica-Bold').fillColor(textColor);
-  doc.text(text, badgeX, y + 5, { width: badgeW, align: 'center', lineBreak: false });
+  doc.fontSize(8).font('Helvetica-Bold').fillColor(textColor);
+  doc.text(text, badgeX, y + 4, { width: badgeW, align: 'center', lineBreak: false });
   doc.restore();
 }
 
@@ -222,7 +222,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
-      margins: { top: 0, bottom: 0, left: 0, right: 0 }
+      margins: { top: 10, bottom: 10, left: 10, right: 10 }
     });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
@@ -233,8 +233,8 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 0; // margin lateral (teste sem margem)
-    const MT = 0; // margin topo (teste sem margem)
+    const M = 10; // margin mínima
+    const MT = 10; // margin topo mínima
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
@@ -266,11 +266,11 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     for (const lanc of lancamentos) {
       const rowH = 32; // Aumentado para caber dia da semana
 
-      // Page break
+      // Page break (apenas header da tabela, sem logo/títulos)
       if (y + rowH > doc.page.height - 80) {
         doc.addPage();
-        y = drawProfessionalHeader(doc, 'Conta Corrente', titleMonth, PW, M);
-        // Re-desenhar header da tabela
+        y = MT; // Reinicia do topo
+        // Re-desenhar apenas header da tabela
         doc.rect(TX, y, TW, thH).fill(C.teal);
         doc.fontSize(10).font('Helvetica-Bold').fillColor(C.white);
         cx = TX;
@@ -386,7 +386,7 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const doc = new PDFDocument({
       size: 'A4',
       layout: 'landscape',
-      margins: { top: 0, bottom: 0, left: 0, right: 0 }
+      margins: { top: 10, bottom: 10, left: 10, right: 10 }
     });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
@@ -397,8 +397,8 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     const monthName = new Date(Number(year), Number(month) - 1, 1).toLocaleString('pt-BR', { month: 'long', year: 'numeric' });
     const titleMonth = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const M = 0; // margin lateral (teste sem margem)
-    const MT = 0; // margin topo (teste sem margem)
+    const M = 10; // margin mínima
+    const MT = 10; // margin topo mínima
     const PW = doc.page.width - M * 2;
 
     // Header profissional com logo
@@ -430,11 +430,11 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     for (const conta of contas) {
       const rowH = 32; // Aumentado para caber dia da semana e badge
 
-      // Page break
+      // Page break (apenas header da tabela, sem logo/títulos)
       if (y + rowH > doc.page.height - 80) {
         doc.addPage();
-        y = drawProfessionalHeader(doc, 'Contas a Pagar', titleMonth, PW, M);
-        // Re-desenhar header
+        y = MT; // Reinicia do topo
+        // Re-desenhar apenas header da tabela
         doc.rect(TX, y, TW, thH).fill(C.teal);
         doc.fontSize(10).font('Helvetica-Bold').fillColor(C.white);
         cx = TX;
