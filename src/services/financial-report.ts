@@ -20,6 +20,8 @@ const C = {
   greenLight: '#d1fae5',
   red:        '#dc2626',
   redLight:   '#fee2e2',
+  blue:       '#2563eb',
+  blueLight:  '#dbeafe',
   grayText:   '#6b7280',
   grayBorder: '#e5e7eb',
   black:      '#111827',
@@ -312,10 +314,13 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
       doc.text(getDayOfWeek(lanc.data), cx + 3, y + 17, { width: colW[0] - 6, align: 'center', lineBreak: false });
       cx += colW[0];
 
-      // Tipo (colorido)
-      const tipoColor = lanc.tipo === 'entrada' ? C.green : lanc.tipo === 'venda' ? C.teal : C.red;
-      doc.fontSize(9).font('Helvetica-Bold').fillColor(tipoColor);
-      doc.text(lanc.tipo.toUpperCase(), cx + 3, y + 10, { width: colW[1] - 6, align: 'center', lineBreak: false });
+      // Tipo — badge colorido
+      const tipoCfg = lanc.tipo === 'entrada'
+        ? { bg: C.greenLight, vc: C.green, label: 'ENTRADA' }
+        : lanc.tipo === 'venda'
+        ? { bg: C.blueLight,  vc: C.blue,  label: 'VENDA'   }
+        : { bg: C.redLight,   vc: C.red,   label: 'SAÍDA'   };
+      drawBadge(doc, tipoCfg.label, cx, y + 7, colW[1], tipoCfg.bg, tipoCfg.vc);
       cx += colW[1];
 
       // Descrição — centralizada, CAPS LOCK
@@ -356,7 +361,7 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
 
     const saldo = totalVendas + totalEntradas - totalSaidas;
     const boxItems = [
-      { label: 'Total Vendas',   value: formatBRL(totalVendas),   bg: C.tealLight,  vc: C.teal,  lc: C.grayText },
+      { label: 'Total Vendas',   value: formatBRL(totalVendas),   bg: C.blueLight,  vc: C.blue,  lc: C.grayText },
       { label: 'Total Entradas', value: formatBRL(totalEntradas), bg: C.greenLight, vc: C.green, lc: C.grayText },
       { label: 'Total Saídas',   value: formatBRL(totalSaidas),   bg: C.redLight,   vc: C.red,   lc: C.grayText },
       { label: 'SALDO DO MÊS',   value: formatBRL(saldo),         bg: C.teal,       vc: C.white, lc: '#a8d4d5'  },
@@ -591,86 +596,63 @@ export async function executeMonthlyReport(): Promise<void> {
     const folderLink = `https://drive.google.com/drive/folders/${folderId}`;
     console.log(`[FinReport] PDFs enviados para: ${folderLink}`);
 
-    // 5. Enviar email para contabilidade
+    // 5. Enviar email para contabilidade (com PDFs anexados + botões Drive)
     const emailSent = await gmail.sendEmail(
       env.ACCOUNTANT_EMAIL,
       `Relatórios Financeiros - ${monthTitle} - Vitall Odontologia`,
-      `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <link rel="preconnect" href="https://fonts.googleapis.com">
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-          <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-        </head>
-        <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;">
-          <div style="max-width: 600px; margin: 40px auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+      `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="margin:0;padding:0;background-color:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:600px;margin:40px auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
 
-            <!-- Header -->
-            <div style="background: linear-gradient(135deg, #277d7e 0%, #1f6364 100%); padding: 40px 30px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600; letter-spacing: -0.5px;">
-                Relatórios Financeiros
-              </h1>
-              <p style="margin: 10px 0 0 0; color: rgba(255,255,255,0.9); font-size: 18px; font-weight: 400;">
-                ${monthTitle}
-              </p>
-            </div>
+    <div style="background:linear-gradient(135deg,#277d7e 0%,#1f6364 100%);padding:40px 30px;text-align:center;">
+      <h1 style="margin:0;color:#ffffff;font-size:26px;font-weight:600;">Relatórios Financeiros</h1>
+      <p style="margin:10px 0 0;color:rgba(255,255,255,0.9);font-size:17px;">${monthTitle}</p>
+    </div>
 
-            <!-- Content -->
-            <div style="padding: 40px 30px;">
-              <p style="margin: 0 0 25px 0; color: #333; font-size: 16px; line-height: 1.6;">
-                Excelente dia,
-              </p>
+    <div style="padding:36px 30px;">
+      <p style="margin:0 0 20px;color:#333;font-size:15px;line-height:1.6;">Excelente dia,</p>
+      <p style="margin:0 0 28px;color:#555;font-size:14px;line-height:1.6;">
+        Seguem os relatórios financeiros da <strong style="color:#277d7e;">Vitall Odontologia</strong> referentes ao mês de <strong>${monthTitle}</strong>. Os PDFs estão anexados e também disponíveis no Google Drive:
+      </p>
 
-              <p style="margin: 0 0 30px 0; color: #555; font-size: 15px; line-height: 1.6;">
-                Seguem os relatórios financeiros da <strong style="color: #277d7e;">Vitall Odontologia</strong> referentes ao mês de <strong>${monthTitle}</strong>:
-              </p>
+      <div style="background:#f9fafb;border-radius:8px;padding:22px;margin-bottom:24px;">
+        <div style="margin-bottom:12px;">
+          <a href="${contaCorrenteLink.webViewLink}" style="display:block;padding:14px 20px;background:#277d7e;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;text-align:center;">
+            📊 Conta Corrente — ${monthTitle}
+          </a>
+        </div>
+        <div>
+          <a href="${contasPagarLink.webViewLink}" style="display:block;padding:14px 20px;background:#277d7e;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:14px;text-align:center;">
+            📋 Contas a Pagar — ${monthTitle}
+          </a>
+        </div>
+      </div>
 
-              <!-- PDFs -->
-              <div style="background-color: #f9fafb; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
-                <div style="margin-bottom: 15px;">
-                  <a href="${contaCorrenteLink.webViewLink}"
-                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #277d7e; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
-                    Conta Corrente - ${monthTitle}
-                  </a>
-                </div>
-                <div>
-                  <a href="${contasPagarLink.webViewLink}"
-                     style="display: inline-block; width: 100%; padding: 16px 24px; background-color: #277d7e; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 15px; text-align: center; transition: background-color 0.3s;">
-                    Contas a Pagar - ${monthTitle}
-                  </a>
-                </div>
-              </div>
+      <div style="text-align:center;padding:18px;background:#f0fffe;border:2px dashed #277d7e;border-radius:8px;">
+        <p style="margin:0 0 10px;color:#555;font-size:13px;">Acesse todos os arquivos na pasta do Google Drive:</p>
+        <a href="${folderLink}" style="display:inline-block;padding:10px 24px;background:#ffffff;color:#277d7e;text-decoration:none;border:2px solid #277d7e;border-radius:6px;font-weight:600;font-size:14px;">
+          📁 Abrir Pasta no Drive
+        </a>
+      </div>
+    </div>
 
-              <!-- Drive Folder -->
-              <div style="text-align: center; padding: 20px; background-color: #f0fffe; border: 2px dashed #277d7e; border-radius: 8px;">
-                <p style="margin: 0 0 12px 0; color: #555; font-size: 14px;">
-                  Acesse todos os arquivos na pasta do Google Drive:
-                </p>
-                <a href="${folderLink}"
-                   style="display: inline-block; padding: 12px 28px; background-color: #ffffff; color: #277d7e; text-decoration: none; border: 2px solid #277d7e; border-radius: 6px; font-weight: 600; font-size: 15px;">
-                  📁 Abrir Pasta
-                </a>
-              </div>
-            </div>
+    <div style="background:#f9fafb;padding:24px 30px;text-align:center;border-top:1px solid #e5e7eb;">
+      <p style="margin:0 0 6px;color:#277d7e;font-weight:600;font-size:15px;">Vitall Odontologia & Saúde Integrativa</p>
+      <p style="margin:0;color:#aaa;font-size:12px;">Email gerado automaticamente pelo VitallAssistente</p>
+    </div>
 
-            <!-- Footer -->
-            <div style="background-color: #f9fafb; padding: 30px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0 0 8px 0; color: #277d7e; font-weight: 600; font-size: 16px;">
-                Vitall Odontologia
-              </p>
-              <p style="margin: 0; color: #999; font-size: 13px; line-height: 1.5;">
-                Este email foi gerado automaticamente pelo sistema VitallAssistente<br>
-                Dúvidas? Entre em contato conosco.
-              </p>
-            </div>
-
-          </div>
-        </body>
-        </html>
-      `,
+  </div>
+</body>
+</html>`,
+      [
+        { filename: `Conta Corrente - ${monthTitle}.pdf`, content: contaCorrentePDF, contentType: 'application/pdf' },
+        { filename: `Contas a Pagar - ${monthTitle}.pdf`, content: contasPagarPDF,   contentType: 'application/pdf' },
+      ],
     );
 
     if (emailSent) {
