@@ -440,14 +440,14 @@ export const toolDefinitions: ToolDefinition[] = [
     type: 'function',
     function: {
       name: 'create_conta_pagar',
-      description: 'Cria uma nova conta a pagar. Use quando o usuário pedir para registrar uma despesa, boleto, conta. Sempre confirme os dados antes de criar.',
+      description: 'Cria uma nova conta a pagar. Use quando o usuário pedir para registrar uma despesa, boleto, conta. Sempre confirme os dados antes de criar. A descrição DEVE estar em CAPS LOCK e sem prefixos como "Pagamento de conta:". Categoria é obrigatória — se não informada, infira das contas existentes.',
       parameters: {
         type: 'object',
         properties: {
-          descricao: { type: 'string', description: 'Descrição da conta (ex: "Protético João - caso Maria")' },
+          descricao: { type: 'string', description: 'Descrição em CAPS LOCK, sem prefixos. Ex: "MARKETING DIGITAL", "ALUGUEL CLÍNICA", "ANTECIPAÇÃO DE LUCROS". NUNCA use "Pagamento de conta: X".' },
           valor: { type: 'number', description: 'Valor em reais (ex: 500.00)' },
           vencimento: { type: 'string', description: 'Data de vencimento no formato YYYY-MM-DD' },
-          categoria: { type: 'string', description: 'Categoria (ex: "LABORATÓRIO", "IMPOSTOS", "MATERIAL", "ALUGUEL"). Opcional.' },
+          categoria: { type: 'string', description: 'Categoria em CAPS LOCK (ex: "LABORATÓRIO", "IMPOSTOS", "MATERIAL", "ALUGUEL"). Se não informada pelo usuário, infira das contas existentes com query_contas_pagar.' },
           classificacao: { type: 'string', description: 'Classificação (ex: "CUSTO FIXO", "CUSTO VARIÁVEL"). Opcional.' },
           competencia: { type: 'string', description: 'Mês de competência no formato YYYY-MM (ex: "2026-03"). Opcional, default = mês do vencimento.' },
           forma_pagamento: { type: 'string', description: 'Forma de pagamento (ex: "PIX", "BOLETO", "CARTÃO"). Opcional.' },

@@ -99,6 +99,11 @@ Quando o usuário enviar uma imagem ou PDF (nota fiscal, boleto, extrato bancár
 - "conversão de orçamentos" → query_budgets e analise a taxa
 - "orçamentos aprovados vs pendentes" → query_budgets e compare os status
 
+### Regras de descrição nas Contas a Pagar
+- **SEMPRE em CAPS LOCK**: toda descrição de conta a pagar deve ser gravada em letras maiúsculas. Ex: "MARKETING DIGITAL", "ALUGUEL CLÍNICA", "ANTECIPAÇÃO DE LUCROS".
+- **Sem prefixos genéricos**: NUNCA use "Pagamento de conta:", "Pagamento de:", "Conta de:", "Despesa de:" ou qualquer prefixo parecido. Use apenas o nome real da despesa. Ex: ✅ "MARKETING DIGITAL" | ❌ "Pagamento de conta: Marketing Digital".
+- **Categoria obrigatória**: ao criar uma conta a pagar, a categoria é obrigatória. Se o usuário não informar, analise as contas existentes do período com *query_contas_pagar* para identificar qual categoria mais se encaixa pela descrição — por exemplo, se a conta é "LAB RADIOLOGIA", veja se já existem contas de laboratório para usar a mesma categoria. Se não encontrar nenhuma referência, sugira a categoria mais lógica e confirme com o usuário antes de criar.
+
 ### Regras importantes
 - Antes de **criar**, **editar** ou **excluir** uma conta ou lançamento, confirme os dados com o usuário
 - Ao listar contas ou lançamentos, mostre o ID resumido (primeiros 8 chars) para referência
