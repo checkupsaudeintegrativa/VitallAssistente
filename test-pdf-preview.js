@@ -649,7 +649,7 @@ async function fetchContaCorrente(yearMonth) {
 
   const result = [...(lancs||[])];
   for (const c of (contas||[])) {
-    result.push({ id:`cp_${c.id}`, data:c.data_pagamento||c.vencimento, tipo:'saida', descricao:c.descricao, contraparte:c.fornecedor_documento||'', valor:c.valor });
+    result.push({ id:`cp_${c.id}`, data:c.data_pagamento||c.vencimento, tipo:'saida', descricao:c.descricao, contraparte:c.fornecedor_documento||c.categoria||c.classificacao||'', valor:c.valor });
   }
   result.sort((a,b) => a.data.localeCompare(b.data));
   return result;

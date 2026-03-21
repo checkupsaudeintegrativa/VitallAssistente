@@ -110,7 +110,8 @@ async function fetchContaCorrente(yearMonth: string): Promise<LancamentoContaCor
         data: c.data_pagamento || c.vencimento,
         tipo: 'saida',
         descricao: c.descricao,
-        contraparte: c.fornecedor_documento || '',
+        // Contraparte: usa fornecedor_documento se tiver, senão categoria/classificação
+        contraparte: c.fornecedor_documento || c.categoria || c.classificacao || '',
         valor: c.valor,
       });
     }
