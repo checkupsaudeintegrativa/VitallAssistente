@@ -31,6 +31,9 @@ const C = {
 // Caminho da logo
 const LOGO_PATH = path.join(__dirname, '../../assets/vitall-logo.png');
 
+// Paleta para gráfico de pizza
+const PIE_PALETTE = ['#277d7e','#2563eb','#c89d68','#059669','#7c3aed','#0891b2','#f59e0b','#db2777'];
+
 // ── Types ──
 
 interface LancamentoContaCorrente {
@@ -200,15 +203,13 @@ function drawPageHeader(
     doc.image(LOGO_PATH, 14, LOGO_Y, { fit: [LOGO_W, LOGO_H] });
   }
 
-  const textX = LOGO_W + 24;
-  const textW = pageWidth - textX - 24;
   const titleY = ACCENT_H + HEADER_H / 2 - 18;
 
   doc.fontSize(15).font('Helvetica-Bold').fillColor(C.teal);
-  doc.text(title.toUpperCase(), textX, titleY, { width: textW, align: 'center', lineBreak: false });
+  doc.text(title.toUpperCase(), 0, titleY, { width: pageWidth, align: 'center', lineBreak: false });
 
   doc.fontSize(10).font('Helvetica').fillColor(C.grayText);
-  doc.text(`Competência: ${monthTitle}`, textX, titleY + 22, { width: textW, align: 'center', lineBreak: false });
+  doc.text(`Competência: ${monthTitle}`, 0, titleY + 22, { width: pageWidth, align: 'center', lineBreak: false });
 
   doc.rect(0, TOTAL_H - 1, pageWidth, 2).fill(C.teal);
 
@@ -244,6 +245,282 @@ function drawTableHeader(
   return y + thH;
 }
 
+/** % de variação, null se não tiver anterior */
+function pctChange(current: number, prev: number): number | null {
+  if (!prev || prev === 0) return null;
+  return ((current - prev) / Math.abs(prev)) * 100;
+}
+
+/** Card de insight com valor e % vs anterior */
+function drawInsightCard(
+  doc: PDFKit.PDFDocument,
+  x: number, y: number, w: number, h: number,
+  label: string, value: string, change: number | null, isExpense: boolean,
+): void {
+  doc.rect(x, y, w, h).fill('#f4f8f8');
+  doc.save().lineWidth(0.5).strokeColor(C.grayBorder).rect(x, y, w, h).stroke().restore();
+
+  doc.fontSize(8).font('Helvetica').fillColor(C.grayText);
+  doc.text(label.toUpperCase(), x + 8, y + 10, { width: w - 16, align: 'center' });
+
+  doc.fontSize(13).font('Helvetica-Bold').fillColor(C.black);
+  doc.text(value, x + 8, y + 26, { width: w - 16, align: 'center' });
+
+  if (change !== null) {
+    const positive = change >= 0;
+    const good = isExpense ? !positive : positive;
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(good ? C.green : C.red);
+    doc.text(`${positive ? '▲' : '▼'} ${Math.abs(change).toFixed(1)}% vs mês anterior`,
+      x + 8, y + 48, { width: w - 16, align: 'center' });
+  }
+}
+
+/** Gráfico de donut usando SVG path */
+function drawDonutChart(
+  doc: PDFKit.PDFDocument,
+  slices: Array<{ label: string; value: number; color: string }>,
+  cx: number, cy: number, r: number,
+): void {
+  const total = slices.reduce((s, sl) => s + sl.value, 0);
+  if (total === 0) return;
+
+  const ri = r * 0.45;
+  let angle = -Math.PI / 2;
+
+  for (const sl of slices) {
+    if (sl.value === 0) continue;
+    const sweep = (sl.value / total) * Math.PI * 2;
+    const end = angle + sweep;
+
+    const x1 = cx + r  * Math.cos(angle), y1 = cy + r  * Math.sin(angle);
+    const x2 = cx + r  * Math.cos(end),   y2 = cy + r  * Math.sin(end);
+    const x3 = cx + ri * Math.cos(end),   y3 = cy + ri * Math.sin(end);
+    const x4 = cx + ri * Math.cos(angle), y4 = cy + ri * Math.sin(angle);
+    const large = sweep > Math.PI ? 1 : 0;
+
+    const d = [
+      `M ${x1.toFixed(2)} ${y1.toFixed(2)}`,
+      `A ${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)}`,
+      `L ${x3.toFixed(2)} ${y3.toFixed(2)}`,
+      `A ${ri} ${ri} 0 ${large} 0 ${x4.toFixed(2)} ${y4.toFixed(2)}`,
+      'Z',
+    ].join(' ');
+
+    doc.path(d).fill(sl.color);
+
+    doc.save().lineWidth(1.5).strokeColor(C.white);
+    doc.moveTo(cx, cy).lineTo(x1, y1).stroke();
+    doc.restore();
+
+    angle = end;
+  }
+}
+
+/** Barra de título para páginas de analytics */
+function drawAnalyticsTitleBar(doc: PDFKit.PDFDocument, title: string, PW: number): number {
+  doc.rect(0, 0, PW, 32).fill(C.tealDark);
+  doc.fontSize(11).font('Helvetica-Bold').fillColor(C.white);
+  doc.text(title, 0, 10, { width: PW, align: 'center', lineBreak: false });
+  return 32;
+}
+
+/** Página de analytics — Conta Corrente */
+function drawAnalyticsCC(
+  doc: PDFKit.PDFDocument,
+  lancamentos: LancamentoContaCorrente[],
+  prevLancamentos: LancamentoContaCorrente[] | null,
+  PW: number, PH: number, monthTitle: string,
+): void {
+  doc.addPage();
+
+  let y = drawAnalyticsTitleBar(doc, `ANÁLISE COMPARATIVA — ${monthTitle.toUpperCase()}`, PW);
+
+  let vendas = 0, entradas = 0, saidas = 0;
+  for (const l of lancamentos) {
+    if (l.tipo === 'venda')        vendas   += l.valor;
+    else if (l.tipo === 'entrada') entradas += l.valor;
+    else                           saidas   += l.valor;
+  }
+  const receita = vendas + entradas;
+  const saldo   = receita - saidas;
+
+  let pVendas = 0, pEntradas = 0, pSaidas = 0;
+  if (prevLancamentos) {
+    for (const l of prevLancamentos) {
+      if (l.tipo === 'venda')        pVendas   += l.valor;
+      else if (l.tipo === 'entrada') pEntradas += l.valor;
+      else                           pSaidas   += l.valor;
+    }
+  }
+  const pReceita = pVendas + pEntradas;
+  const pSaldo   = pReceita - pSaidas;
+
+  y += 20;
+
+  const cards = [
+    { label: 'Total Receita',  value: formatBRL(receita),  change: pctChange(receita, pReceita),   isExpense: false },
+    { label: 'Total Vendas',   value: formatBRL(vendas),   change: pctChange(vendas, pVendas),     isExpense: false },
+    { label: 'Total Entradas', value: formatBRL(entradas), change: pctChange(entradas, pEntradas), isExpense: false },
+    { label: 'Saldo do Mês',   value: formatBRL(saldo),    change: pctChange(saldo, pSaldo),       isExpense: false },
+  ];
+
+  const cW = PW / 4, cH = 70, cPad = 8;
+  for (let i = 0; i < cards.length; i++) {
+    drawInsightCard(doc, i * cW + cPad, y, cW - cPad * 2, cH, cards[i].label, cards[i].value, cards[i].change, cards[i].isExpense);
+  }
+  y += cH + 24;
+
+  doc.fontSize(9).font('Helvetica-Bold').fillColor(C.grayText);
+  doc.text('COMPOSIÇÃO DA RECEITA', 0, y, { width: PW, align: 'center' });
+  y += 16;
+
+  const barW = PW * 0.7, barX = (PW - barW) / 2, barH = 22;
+
+  if (receita > 0) {
+    const wPct = vendas / receita;
+    doc.rect(barX, y, barW * wPct, barH).fill(C.blue);
+    doc.rect(barX + barW * wPct, y, barW * (1 - wPct), barH).fill(C.green);
+    if (wPct > 0.15) {
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(C.white);
+      doc.text(`VENDAS ${(wPct * 100).toFixed(0)}%`, barX + 6, y + 7, { width: barW * wPct - 10, align: 'left', lineBreak: false });
+    }
+    if (wPct < 0.85) {
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(C.white);
+      doc.text(`ENTRADAS ${((1 - wPct) * 100).toFixed(0)}%`, barX + barW * wPct + 6, y + 7, { width: barW * (1 - wPct) - 10, align: 'left', lineBreak: false });
+    }
+  } else {
+    doc.rect(barX, y, barW, barH).fill(C.grayBorder);
+  }
+  y += barH + 8;
+
+  const legItems = [
+    { color: C.blue,  label: `Vendas — ${formatBRL(vendas)}` },
+    { color: C.green, label: `Entradas bancárias — ${formatBRL(entradas)}` },
+    { color: C.red,   label: `Saídas — ${formatBRL(saidas)}` },
+  ];
+  const legX = (PW - 600) / 2;
+  for (let i = 0; i < legItems.length; i++) {
+    const lx = legX + i * 200;
+    doc.rect(lx, y, 12, 12).fill(legItems[i].color);
+    doc.fontSize(8).font('Helvetica').fillColor(C.black);
+    doc.text(legItems[i].label, lx + 16, y + 2, { lineBreak: false });
+  }
+
+  doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · Vitall Odontologia & Saúde Integrativa`, 0, PH - 18, { width: PW, align: 'center' });
+}
+
+/** Página de analytics — Contas a Pagar */
+function drawAnalyticsCP(
+  doc: PDFKit.PDFDocument,
+  contas: ContaPagar[],
+  prevContas: ContaPagar[] | null,
+  PW: number, PH: number, monthTitle: string,
+): void {
+  doc.addPage();
+
+  let y = drawAnalyticsTitleBar(doc, `ANÁLISE DE DESPESAS — ${monthTitle.toUpperCase()}`, PW);
+
+  const totalAtual = contas.reduce((s, c) => s + c.valor, 0);
+  const totalPrev  = prevContas ? prevContas.reduce((s, c) => s + c.valor, 0) : 0;
+
+  const byClassif = new Map<string, number>();
+  for (const c of contas) {
+    const k = c.classificacao || 'Outros';
+    byClassif.set(k, (byClassif.get(k) || 0) + c.valor);
+  }
+
+  const byCateg = new Map<string, number>();
+  for (const c of contas) {
+    const k = c.categoria || 'Outros';
+    byCateg.set(k, (byCateg.get(k) || 0) + c.valor);
+  }
+  const topCateg = [...byCateg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  const slices: Array<{ label: string; value: number; color: string }> = [];
+  let colorIdx = 0;
+  for (const [label, value] of byClassif) {
+    slices.push({ label, value, color: PIE_PALETTE[colorIdx % PIE_PALETTE.length] });
+    colorIdx++;
+  }
+
+  const LEFT_W = 380, RIGHT_W = PW - LEFT_W;
+  y += 12;
+
+  const chartAreaH = PH - y - 30;
+  const CHART_R = Math.min(100, chartAreaH * 0.38);
+  const cx = LEFT_W / 2;
+  const cy = y + CHART_R + 8;
+
+  drawDonutChart(doc, slices, cx, cy, CHART_R);
+
+  doc.fontSize(9).font('Helvetica-Bold').fillColor(C.teal);
+  doc.text('TOTAL', cx - 30, cy - 14, { width: 60, align: 'center' });
+  doc.fontSize(10).font('Helvetica-Bold').fillColor(C.black);
+  const totalStr = formatBRL(totalAtual);
+  doc.text(totalStr.length > 12 ? totalStr.replace('R$ ', 'R$\n') : totalStr, cx - 35, cy - 2, { width: 70, align: 'center' });
+
+  let legY = cy + CHART_R + 14;
+  for (const sl of slices) {
+    if (legY > PH - 30) break;
+    const pct = totalAtual > 0 ? ((sl.value / totalAtual) * 100).toFixed(1) : '0.0';
+    doc.rect(20, legY, 10, 10).fill(sl.color);
+    doc.fontSize(8).font('Helvetica').fillColor(C.black);
+    doc.text(`${sl.label}`, 34, legY + 1, { width: 160, lineBreak: false, ellipsis: true });
+    doc.fontSize(8).font('Helvetica-Bold').fillColor(C.black);
+    doc.text(`${pct}%  ${formatBRL(sl.value)}`, 200, legY + 1, { width: 160, lineBreak: false });
+    legY += 16;
+  }
+
+  const RX = LEFT_W + 12, cardW = RIGHT_W - 24;
+  let ry = y;
+
+  drawInsightCard(doc, RX, ry, cardW, 72, 'Total de Despesas', formatBRL(totalAtual), pctChange(totalAtual, totalPrev), true);
+  ry += 80;
+
+  doc.fontSize(9).font('Helvetica-Bold').fillColor(C.grayText);
+  doc.text('TOP CATEGORIAS', RX, ry, { width: cardW, align: 'center' });
+  ry += 14;
+
+  const prevByCateg = new Map<string, number>();
+  if (prevContas) {
+    for (const c of prevContas) {
+      const k = c.categoria || 'Outros';
+      prevByCateg.set(k, (prevByCateg.get(k) || 0) + c.valor);
+    }
+  }
+
+  for (let i = 0; i < topCateg.length; i++) {
+    const [categ, val] = topCateg[i];
+    const prevVal = prevByCateg.get(categ) || 0;
+    const chg = pctChange(val, prevVal);
+    const rowH = 36;
+
+    doc.rect(RX, ry, cardW, rowH).fill(i % 2 === 0 ? '#f4f8f8' : C.white);
+    doc.save().lineWidth(0.4).strokeColor(C.grayBorder).rect(RX, ry, cardW, rowH).stroke().restore();
+
+    doc.fontSize(11).font('Helvetica-Bold').fillColor(C.teal);
+    doc.text(`${i + 1}`, RX + 8, ry + 10, { width: 20 });
+
+    doc.fontSize(8.5).font('Helvetica-Bold').fillColor(C.black);
+    doc.text((categ || '').toUpperCase(), RX + 28, ry + 6, { width: cardW - 110, lineBreak: false, ellipsis: true });
+
+    doc.fontSize(9).font('Helvetica-Bold').fillColor(C.black);
+    doc.text(formatBRL(val), RX + 28, ry + 20, { width: cardW - 110, lineBreak: false });
+
+    if (chg !== null) {
+      const good = chg < 0;
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(good ? C.green : C.red);
+      doc.text(`${chg >= 0 ? '▲' : '▼'} ${Math.abs(chg).toFixed(1)}%`, RX + cardW - 75, ry + 13, { width: 65, align: 'right' });
+    }
+
+    ry += rowH + 3;
+  }
+
+  doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
+  doc.text(`Gerado em ${new Date().toLocaleDateString('pt-BR')} · Vitall Odontologia & Saúde Integrativa`, 0, PH - 18, { width: PW, align: 'center' });
+}
+
 /** Badge de status */
 function drawBadge(
   doc: PDFKit.PDFDocument,
@@ -265,7 +542,7 @@ function drawBadge(
 }
 
 /** Gera PDF de Conta Corrente com layout full-width */
-async function generateContaCorrentePDF(yearMonth: string, lancamentos: LancamentoContaCorrente[]): Promise<Buffer> {
+async function generateContaCorrentePDF(yearMonth: string, lancamentos: LancamentoContaCorrente[], prevLancamentos: LancamentoContaCorrente[] | null = null): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0 });
     const chunks: Buffer[] = [];
@@ -333,8 +610,8 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
       doc.text((lanc.contraparte || '').toUpperCase(), cx + 3, y + 10, { width: colW[3] - 6, align: 'center', lineBreak: false, ellipsis: true });
       cx += colW[3];
 
-      // Valor — centralizado
-      const valorColor = lanc.tipo === 'saida' ? C.red : C.green;
+      // Valor — azul para venda, verde para entrada, vermelho para saída
+      const valorColor = lanc.tipo === 'saida' ? C.red : lanc.tipo === 'venda' ? C.blue : C.green;
       doc.fontSize(9.5).font('Helvetica-Bold').fillColor(valorColor);
       doc.text(formatBRL(lanc.valor), cx + 3, y + 10, { width: colW[4] - 6, align: 'center', lineBreak: false });
 
@@ -387,13 +664,16 @@ async function generateContaCorrentePDF(yearMonth: string, lancamentos: Lancamen
     doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
     doc.text(`Gerado em ${geradoEm} · Vitall Odontologia & Saúde Integrativa`, 0, y, { width: PW, align: 'center' });
 
+    // Página de analytics
+    drawAnalyticsCC(doc, lancamentos, prevLancamentos, PW, PH, titleMonth);
+
     doc.end();
   });
 }
 
 
 /** Gera PDF de Contas a Pagar com layout full-width */
-async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): Promise<Buffer> {
+async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[], prevContas: ContaPagar[] | null = null): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: 0 });
     const chunks: Buffer[] = [];
@@ -533,6 +813,9 @@ async function generateContasPagarPDF(yearMonth: string, contas: ContaPagar[]): 
     doc.fontSize(7).font('Helvetica').fillColor(C.grayText);
     doc.text(`Gerado em ${geradoEm} · Vitall Odontologia & Saúde Integrativa`, 0, y, { width: PW, align: 'center' });
 
+    // Página de analytics
+    drawAnalyticsCP(doc, contas, prevContas, PW, PH, titleMonth);
+
     doc.end();
   });
 }
@@ -557,10 +840,15 @@ export async function executeMonthlyReport(): Promise<void> {
 
     console.log(`[FinReport] Mês: ${yearMonth} (${monthTitle})`);
 
-    // 2. Fetch dados
-    const [lancamentos, contas] = await Promise.all([
+    // 2. Fetch dados (mês atual + mês anterior para comparação)
+    const prevMonth = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+    const prevYearMonth = `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}`;
+
+    const [lancamentos, contas, prevLancamentos, prevContas] = await Promise.all([
       fetchContaCorrente(yearMonth),
       fetchContasPagar(yearMonth),
+      fetchContaCorrente(prevYearMonth),
+      fetchContasPagar(prevYearMonth),
     ]);
 
     if (lancamentos.length === 0 && contas.length === 0) {
@@ -572,8 +860,8 @@ export async function executeMonthlyReport(): Promise<void> {
     // 3. Gerar PDFs
     console.log('[FinReport] Gerando PDFs...');
     const [contaCorrentePDF, contasPagarPDF] = await Promise.all([
-      generateContaCorrentePDF(yearMonth, lancamentos),
-      generateContasPagarPDF(yearMonth, contas),
+      generateContaCorrentePDF(yearMonth, lancamentos, prevLancamentos),
+      generateContasPagarPDF(yearMonth, contas, prevContas),
     ]);
 
     console.log(`[FinReport] PDFs gerados: Conta Corrente (${(contaCorrentePDF.length / 1024).toFixed(1)} KB), Contas a Pagar (${(contasPagarPDF.length / 1024).toFixed(1)} KB)`);
