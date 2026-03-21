@@ -82,14 +82,14 @@ async function fetchContaCorrente(yearMonth: string): Promise<LancamentoContaCor
     console.error('[FinReport] Erro ao buscar lançamentos:', errLanc.message);
   }
 
-  // Buscar contas pagas (status=realizado) — são saídas
+  // Buscar contas pagas (status=realizado) — filtrar por data_pagamento (data real do pagamento)
   const { data: contas, error: errContas } = await supabase
     .from('contas_pagar')
-    .select('id, vencimento, descricao, categoria, valor')
+    .select('id, vencimento, data_pagamento, descricao, fornecedor_documento, categoria, classificacao, valor')
     .eq('status', 'realizado')
-    .gte('vencimento', startDate)
-    .lte('vencimento', endDate)
-    .order('vencimento', { ascending: true });
+    .gte('data_pagamento', startDate)
+    .lte('data_pagamento', endDate)
+    .order('data_pagamento', { ascending: true });
 
   if (errContas) {
     console.error('[FinReport] Erro ao buscar contas pagas:', errContas.message);
@@ -102,15 +102,15 @@ async function fetchContaCorrente(yearMonth: string): Promise<LancamentoContaCor
     result.push(...lancamentos);
   }
 
-  // Adicionar contas pagas como saídas
+  // Adicionar contas pagas como saídas (mesma lógica do precificação: data_pagamento || vencimento)
   if (contas) {
     for (const c of contas) {
       result.push({
-        id: c.id,
-        data: c.vencimento,
+        id: `cp_${c.id}`,
+        data: c.data_pagamento || c.vencimento,
         tipo: 'saida',
-        descricao: `${c.categoria} - ${c.descricao}`,
-        contraparte: '',
+        descricao: c.descricao,
+        contraparte: c.fornecedor_documento || '',
         valor: c.valor,
       });
     }

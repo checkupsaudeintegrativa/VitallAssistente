@@ -643,11 +643,13 @@ async function fetchContaCorrente(yearMonth) {
     .select('id,data,tipo,descricao,contraparte,valor').gte('data',s).lte('data',e).order('data',{ascending:true});
 
   const { data: contas } = await supabase.from('contas_pagar')
-    .select('id,vencimento,descricao,categoria,valor').eq('status','realizado').gte('vencimento',s).lte('vencimento',e);
+    .select('id,vencimento,data_pagamento,descricao,fornecedor_documento,categoria,classificacao,valor')
+    .eq('status','realizado').gte('data_pagamento',s).lte('data_pagamento',e)
+    .order('data_pagamento',{ascending:true});
 
   const result = [...(lancs||[])];
   for (const c of (contas||[])) {
-    result.push({ id:c.id, data:c.vencimento, tipo:'saida', descricao:`${c.categoria} - ${c.descricao}`, contraparte:'', valor:c.valor });
+    result.push({ id:`cp_${c.id}`, data:c.data_pagamento||c.vencimento, tipo:'saida', descricao:c.descricao, contraparte:c.fornecedor_documento||'', valor:c.valor });
   }
   result.sort((a,b) => a.data.localeCompare(b.data));
   return result;
