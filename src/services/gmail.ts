@@ -275,23 +275,60 @@ function parseBRL(value: string): number {
  * @param htmlBody - Corpo do email em HTML
  * @returns true se enviado com sucesso, false caso contrário
  */
-export async function sendEmail(to: string, subject: string, htmlBody: string): Promise<boolean> {
+export interface EmailAttachment {
+  filename: string;
+  content: Buffer;
+  contentType: string;
+}
+
+export async function sendEmail(to: string, subject: string, htmlBody: string, attachments?: EmailAttachment[]): Promise<boolean> {
   try {
     const gmail = getGmailClient();
 
-    // Formato RFC 2822
     const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
-    const messageParts = [
-      `To: ${to}`,
-      `Subject: ${utf8Subject}`,
-      'MIME-Version: 1.0',
-      'Content-Type: text/html; charset=utf-8',
-      '',
-      htmlBody,
-    ];
-    const message = messageParts.join('\r\n');
+    const boundary = `boundary_${Date.now()}`;
 
-    // Encode em base64url
+    let message: string;
+
+    if (attachments && attachments.length > 0) {
+      // MIME multipart para email com anexos
+      const parts: string[] = [
+        `To: ${to}`,
+        `Subject: ${utf8Subject}`,
+        'MIME-Version: 1.0',
+        `Content-Type: multipart/mixed; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/html; charset=utf-8',
+        '',
+        htmlBody,
+      ];
+
+      for (const att of attachments) {
+        parts.push(
+          `--${boundary}`,
+          `Content-Type: ${att.contentType}`,
+          'Content-Transfer-Encoding: base64',
+          `Content-Disposition: attachment; filename="${att.filename}"`,
+          '',
+          att.content.toString('base64'),
+        );
+      }
+
+      parts.push(`--${boundary}--`);
+      message = parts.join('\r\n');
+    } else {
+      // Email simples sem anexos
+      message = [
+        `To: ${to}`,
+        `Subject: ${utf8Subject}`,
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=utf-8',
+        '',
+        htmlBody,
+      ].join('\r\n');
+    }
+
     const encodedMessage = Buffer.from(message)
       .toString('base64')
       .replace(/\+/g, '-')
@@ -300,15 +337,12 @@ export async function sendEmail(to: string, subject: string, htmlBody: string): 
 
     await gmail.users.messages.send({
       userId: 'me',
-      requestBody: {
-        raw: encodedMessage,
-      },
+      requestBody: { raw: encodedMessage },
     });
 
     console.log(`[Gmail] Email enviado para ${to}: ${subject}`);
     return true;
   } catch (error: any) {
-    // Se falhar por falta de scope gmail.send, retorna false gracefully
     if (error.message?.includes('insufficient') || error.message?.includes('scope')) {
       console.warn(`[Gmail] Scope gmail.send não configurado. Email NÃO enviado para ${to}`);
       return false;
